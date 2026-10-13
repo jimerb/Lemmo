@@ -1,12 +1,12 @@
 // The in-level screen: owns the simulation, the 3D view, the overlay and the HUD.
 import { Audio } from './audio.ts';
-import { burst, drawAntigrav, drawEntrance, drawExit, drawLemmo, drawPortal, drawTrap, stepParticles, type Particle } from './art.ts';
+import { burst, drawAntigrav, drawDoor, drawEntrance, drawExit, drawLemmo, drawPortal, drawSwitch, drawTrap, stepParticles, type Particle } from './art.ts';
 import { ICONS } from './icons.ts';
 import { openGuide } from './guide.ts';
 import { TIERS, tierOf, type Footprint, type LevelData, type LevelIndexEntry } from './level.ts';
 import { CylinderView, RADIUS } from './render3d.ts';
 import { FlatView } from './flatview.ts';
-import { F, SKILLS, Sim, type Lemmo, type Skill } from './sim.ts';
+import { F, SKILLS, SPECIALS, Sim, type Lemmo, type Skill } from './sim.ts';
 import { TerrainPainter, themeFor } from './terrain.ts';
 
 const STEP = 1 / 60;
@@ -14,9 +14,11 @@ const STATE_LABEL: Record<string, string> = {
   walking: 'Walker', falling: 'Faller', climbing: 'Climbing', flipping: 'Climbing', blocking: 'Blocker',
   building: 'Builder', shrugging: 'Builder', bashing: 'Basher', mining: 'Miner', digging: 'Digger', ohno: 'Oh no!',
   drowning: 'Drowning', burning: 'Burning', splatting: 'Splat', exiting: 'Saved!', trapped: 'Caught',
+  rocketing: 'Rocket', cartwheeling: 'Cartwheel', trampoline: 'Trampoline', bouncing: 'Bouncing', teleporting: 'Teleporting',
 };
 const SKILL_LABEL: Record<string, string> = {
   climber: 'Climb', floater: 'Float', bomber: 'Bomb', blocker: 'Block', builder: 'Build', basher: 'Bash', miner: 'Mine', digger: 'Dig',
+  rocket: 'Rocket', cartwheel: 'Wheel', trampoline: 'Spring', antigrav: 'Flip', slower: 'Slow', faster: 'Fast',
 };
 
 export interface GameHost {
@@ -50,9 +52,13 @@ export class Game {
   private octx: CanvasRenderingContext2D;
   private particles: Particle[] = [];
   private selected: Skill = 'climber';
+  /** The eight standard skills plus any special skills this level hands out (keys 9 and 0). */
+  private dockSkills: Skill[] = [];
   private hover: Lemmo | null = null;
   private mouse = { x: -1, y: -1, down: false, sx: 0, sy: 0, dragging: false, lastX: 0, lastY: 0 };
   private keys = new Set<string>();
+  /** Last input came from touch or pen (no hover, bigger targets). */
+  private touchMode = matchMedia('(pointer: coarse)').matches;
   private speed = 1;
   private paused = true;
   private started = false;
@@ -66,11 +72,11 @@ export class Game {
   private ui: Record<string, HTMLElement> = {};
   private mini: HTMLCanvasElement;
   private miniBase: HTMLCanvasElement;
-  private trapFlash = new Map<number, number>();
   private resizeObs: ResizeObserver;
 
   constructor(private level: LevelData, private entry: LevelIndexEntry, private host: GameHost) {
     this.sim = new Sim(level);
+    this.dockSkills = [...SKILLS, ...SPECIALS.filter((s) => (level.skills[s] ?? 0) > 0)];
     const theme = themeFor(level.name, level.theme);
     this.painter = new TerrainPainter(this.sim.cells, this.sim.rows, theme);
     this.root.style.background = `radial-gradient(1200px 800px at 50% 40%, ${theme.sky[1]}, ${theme.sky[0]} 70%)`;
@@ -84,7 +90,7 @@ export class Game {
     this.miniBase = el('canvas');
     this.buildHud();
     this.buildMiniBase();
-    this.selected = (SKILLS.find((s) => (this.sim.skills[s] ?? 0) > 0) ?? 'climber') as Skill;
+    this.selected = this.dockSkills.find((s) => (this.sim.skills[s] ?? 0) > 0) ?? 'climber';
     this.refreshSkills();
     this.bindInput();
     this.resizeObs = new ResizeObserver(() => this.resize());
@@ -199,15 +205,17 @@ export class Game {
       let t = 0;
       const tick = () => { this.sim.adjustRelease(d); this.refreshRelease(); t = window.setTimeout(tick, 90); };
       b.onpointerdown = () => { this.sim.adjustRelease(d); this.refreshRelease(); t = window.setTimeout(tick, 400); };
-      b.onpointerup = b.onpointerleave = () => clearTimeout(t);
+      b.onpointerup = b.onpointerleave = b.onpointercancel = () => clearTimeout(t);
     };
     hold(minus, -1);
     hold(plus, 1);
     rr.querySelector('.row')!.append(minus, plus);
     this.ui.rr = rr.querySelector('.val')!;
     dock.append(rr, el('div', 'sep'));
-    SKILLS.forEach((s, i) => {
-      const b = el('button', 'skill', `<span class="key">${i + 1}</span>${ICONS[s]}<span class="name">${SKILL_LABEL[s]}</span><span class="count">0</span>`);
+    this.dockSkills.forEach((s, i) => {
+      const special = i >= SKILLS.length;
+      const b = el('button', special ? 'skill special' : 'skill', `${i < 10 ? `<span class="key">${(i + 1) % 10}</span>` : ''}${ICONS[s]}<span class="name">${SKILL_LABEL[s]}</span><span class="count">0</span>`);
+      b.title = SKILL_HELP[s] ?? SKILL_LABEL[s];
       b.onclick = () => this.select(s);
       this.ui['skill_' + s] = b;
       dock.append(b);
@@ -293,10 +301,10 @@ export class Game {
 
   private skillSig = '';
   private refreshSkills() {
-    const sig = this.selected + SKILLS.map((s) => this.sim.skills[s] ?? 0).join(',');
+    const sig = this.selected + this.dockSkills.map((s) => this.sim.skills[s] ?? 0).join(',');
     if (sig === this.skillSig) return;
     this.skillSig = sig;
-    for (const s of SKILLS) {
+    for (const s of this.dockSkills) {
       const b = this.ui['skill_' + s];
       const n = this.sim.skills[s] ?? 0;
       b.querySelector('.count')!.textContent = String(n);
@@ -327,7 +335,7 @@ export class Game {
     } else {
       this.nukeArmedAt = this.clock;
       this.ui.nuke.classList.add('armed');
-      this.toast('Click Nuke again to blow up every Lemmo');
+      this.toast(`${this.touchMode ? 'Tap' : 'Click'} Nuke again to blow up every Lemmo`);
       setTimeout(() => this.ui.nuke.classList.remove('armed'), 700);
     }
   }
@@ -357,7 +365,7 @@ export class Game {
   }
 
   private skillChips() {
-    return SKILLS.filter((s) => (this.level.skills[s] ?? 0) > 0)
+    return this.dockSkills.filter((s) => (this.level.skills[s] ?? 0) > 0)
       .map((s) => `<span class="chip">${ICONS[s]}${this.level.skills[s]}</span>`).join('') || '<span class="chip">No skills</span>';
   }
 
@@ -371,7 +379,9 @@ export class Game {
         <div class="fact"><b>${fmtTime(this.level.timeLimit)}</b><span>Time</span></div>
       </div>
       <div class="skill-chips">${this.skillChips()}</div>
-      <div class="hint"><kbd>1</kbd>–<kbd>8</kbd> pick a skill · click a Lemmo to assign · the world wraps around at the edges · <kbd>V</kbd> toggles the spinning cylinder view · new here? press <kbd>I</kbd> or ⓘ for the guide</div>
+      <div class="hint">${this.touchMode
+        ? 'Tap a skill, then tap a Lemmo · the world wraps around at the edges · the cylinder button switches to the spinning view: drag to spin, pinch to zoom · new here? tap ⓘ for the guide'
+        : `<kbd>1</kbd>–<kbd>${this.dockSkills.length > 8 ? (this.dockSkills.length > 9 ? '0' : '9') : '8'}</kbd> pick a skill · click a Lemmo to assign · the world wraps around at the edges · <kbd>V</kbd> toggles the spinning cylinder view · new here? press <kbd>I</kbd> or ⓘ for the guide`}</div>
       <div class="actions"><button class="btn ghost" data-a="back">${this.host.exitLabel ?? 'Levels'}</button><button class="btn primary" data-a="go">Let's go!</button></div>`);
     m.querySelector<HTMLElement>('[data-a=back]')!.onclick = () => this.host.onExit();
     this.closeBriefing = close;
@@ -391,6 +401,8 @@ export class Game {
     for (const ch of this.level.name) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     this.host.audio.startMusic(seed);
     this.host.audio.unlock().then(() => this.host.audio.play('letsgo'));
+    if (this.touchMode && this.root.clientHeight > this.root.clientWidth * 1.1 && this.mode === 'flat')
+      setTimeout(() => this.toast('Turn your device sideways for a bigger view, or try the cylinder view'), 600);
   }
 
   private showPause() {
@@ -447,7 +459,10 @@ export class Game {
     if (e.target instanceof HTMLInputElement) return;
     this.keys.add(e.key.toLowerCase());
     const k = e.key.toLowerCase();
-    if (k >= '1' && k <= '8') this.select(SKILLS[Number(k) - 1]);
+    if (k >= '0' && k <= '9') {
+      const s = this.dockSkills[(Number(k) + 9) % 10];
+      if (s) this.select(s);
+    }
     else if (k === 'p') this.togglePause();
     else if (k === 'f') this.cycleSpeed();
     else if (k === 'n') this.armNuke();
@@ -466,15 +481,36 @@ export class Game {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     const o = this.overlay;
+    // Pointer input covers mouse, pen and touch: tap/click assigns, drag spins the cylinder, pinch zooms it.
+    const pts = new Map<number, { x: number; y: number }>();
+    let pinch: { d: number; dist: number } | null = null;
+    const spread = () => {
+      const [a, b] = [...pts.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
     o.addEventListener('pointerdown', (e) => {
       o.setPointerCapture(e.pointerId);
-      Object.assign(this.mouse, { down: true, sx: e.offsetX, sy: e.offsetY, lastX: e.offsetX, lastY: e.offsetY, dragging: false });
+      this.touchMode = e.pointerType !== 'mouse';
+      pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      if (pts.size === 2) {
+        pinch = { d: spread(), dist: this.view.target.dist };
+        this.mouse.dragging = true; // a second finger never counts as a tap
+        return;
+      }
+      Object.assign(this.mouse, { x: e.offsetX, y: e.offsetY, down: true, sx: e.offsetX, sy: e.offsetY, lastX: e.offsetX, lastY: e.offsetY, dragging: false });
     });
     o.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse') this.touchMode = false;
+      if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      if (pinch && pts.size === 2) {
+        if (this.mode === 'cylinder') this.view.target.dist = clamp(pinch.dist * (pinch.d / Math.max(10, spread())), 62, 280);
+        return;
+      }
       this.mouse.x = e.offsetX;
       this.mouse.y = e.offsetY;
       if (!this.mouse.down) return;
-      if (!this.mouse.dragging && Math.hypot(e.offsetX - this.mouse.sx, e.offsetY - this.mouse.sy) > 6) this.mouse.dragging = true;
+      const slop = e.pointerType === 'mouse' ? 6 : 12;
+      if (!this.mouse.dragging && Math.hypot(e.offsetX - this.mouse.sx, e.offsetY - this.mouse.sy) > slop) this.mouse.dragging = true;
       if (this.mouse.dragging && this.mode === 'cylinder') {
         const front = this.view.project(this.view.frontColumn(), this.view.camY + this.sim.rows / 2, o.clientWidth, o.clientHeight);
         const ppu = Math.max(0.5, front.scale);
@@ -485,16 +521,20 @@ export class Game {
       this.mouse.lastX = e.offsetX;
       this.mouse.lastY = e.offsetY;
     });
-    o.addEventListener('pointerup', () => {
-      if (!this.mouse.dragging && this.hover && this.started && !this.ended) {
-        if (this.sim.assign(this.hover, this.selected)) this.refreshSkills();
-        else if ((this.sim.skills[this.selected] ?? 0) <= 0) this.toast(`No ${SKILL_LABEL[this.selected].toLowerCase()} skills left`);
-      }
+    const end = (e: PointerEvent, cancelled: boolean) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinch = null;
+      if (pts.size > 0) return;
+      const touch = e.pointerType !== 'mouse';
+      if (!cancelled && this.mouse.down && !this.mouse.dragging) this.tryAssign(this.pick(e.offsetX, e.offsetY, touch ? 26 : 14), touch);
       this.mouse.down = false;
       this.mouse.dragging = false;
+      if (touch) this.mouse.x = -1; // no hover highlight left behind by a finger
       o.style.cursor = '';
-    });
-    o.addEventListener('pointerleave', () => { this.mouse.x = -1; });
+    };
+    o.addEventListener('pointerup', (e) => end(e, false));
+    o.addEventListener('pointercancel', (e) => end(e, true));
+    o.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') this.mouse.x = -1; });
     o.addEventListener('wheel', (e) => {
       if (this.mode !== 'cylinder') return;
       this.view.target.dist = clamp(this.view.target.dist * (1 + e.deltaY * 0.0012), 62, 280);
@@ -508,6 +548,30 @@ export class Game {
     };
     this.mini.addEventListener('pointerdown', (e) => { this.mini.setPointerCapture(e.pointerId); mm(e); });
     this.mini.addEventListener('pointermove', (e) => { if (e.buttons) mm(e); });
+  }
+
+  private lastVis: { l: Lemmo; p: { x: number; y: number; scale: number } }[] = [];
+  /** The Lemmo nearest to screen point (x, y), preferring ones the selected skill can be given to. */
+  private pick(x: number, y: number, minR: number): Lemmo | null {
+    let best = Infinity, hit: Lemmo | null = null;
+    for (const { l, p } of this.lastVis) {
+      if (l.type === 3 || !this.sim.lemmos.includes(l)) continue;
+      const d = Math.hypot(x - p.x, y - (p.y - p.scale * 1.6 * l.g));
+      if (d > Math.max(minR, p.scale * 2.6)) continue;
+      const score = d - (this.sim.canAssign(l, this.selected) ? 1000 : 0);
+      if (score < best) {
+        best = score;
+        hit = l;
+      }
+    }
+    return hit;
+  }
+
+  private tryAssign(l: Lemmo | null, touch: boolean) {
+    if (!l || !this.started || this.ended) return;
+    if (this.sim.assign(l, this.selected)) this.refreshSkills();
+    else if ((this.sim.skills[this.selected] ?? 0) <= 0) this.toast(`No ${SKILL_LABEL[this.selected].toLowerCase()} skills left`);
+    else if (touch) this.toast(`That Lemmo can’t ${SKILL_LABEL[this.selected].toLowerCase()} right now (${(STATE_LABEL[l.state] ?? l.state).toLowerCase()})`);
   }
 
   private resize() {
@@ -614,7 +678,6 @@ export class Game {
         this.sim.step(STEP);
         this.acc -= STEP;
       }
-      for (const [key, v] of this.trapFlash) this.trapFlash.set(key, v - dt * this.speed);
     }
     for (const ev of this.sim.events.splice(0)) {
       if (ev.kind === 'sound') this.host.audio.play(ev.name);
@@ -673,19 +736,27 @@ export class Game {
       if (p.facing < 0.12) continue;
       drawEntrance(c, p.x, p.y, p.scale, e.max[0] - e.min[0] + 1, e.max[1] - e.min[1] + 2, e.lemType, open, time);
     }
-    this.level.triggers.forEach((t) => {
-      if (t.kind !== 'antigrav') return;
+    for (const r of this.sim.triggers) {
+      const t = r.t;
       const p = P((t.min[0] + t.max[0] + 1) / 2, t.min[1]);
-      if (p.facing > 0.12) drawAntigrav(c, p.x, p.y, p.scale, t.max[0] - t.min[0] + 1, t.max[1] - t.min[1] + 1, time);
-    });
+      if (p.facing <= 0.12) continue;
+      if (t.kind === 'antigrav') drawAntigrav(c, p.x, p.y, p.scale, t.max[0] - t.min[0] + 1, t.max[1] - t.min[1] + 1, time, r.active);
+      else drawSwitch(c, p.x, p.y, p.scale, t.kind, r.state, r.active, t.max[0] - t.min[0] + 1, time);
+    }
+    for (const d of this.sim.doors) {
+      const p = P((d.x0 + d.x1) / 2, d.yBot);
+      if (p.facing <= 0.12) continue;
+      drawDoor(c, p.x, p.y, p.scale, d.x1 - d.x0, d.yTop - d.yBot, d.prog, d.d.mode ? Math.max(0, d.d.count - d.count) : null, time);
+    }
     this.level.teleporters.forEach((t) => {
       const p = P(t.pos[0], t.min[1]);
       if (p.facing > 0.12) drawPortal(c, p.x, p.y, p.scale, time);
     });
-    this.level.traps.forEach((t, i) => {
-      const p = P((t.min[0] + t.max[0] + 1) / 2, t.min[1]);
-      if (p.facing > 0.12) drawTrap(c, p.x, p.y, p.scale, t.max[0] - t.min[0] + 1, time, (this.trapFlash.get(i) ?? 0) > 0);
-    });
+    for (const r of this.sim.traps) {
+      const b = r.box;
+      const p = P((b.min[0] + b.max[0] + 1) / 2, b.min[1]);
+      if (p.facing > 0.12) drawTrap(c, p.x, p.y, p.scale, b.max[0] - b.min[0] + 1, time, r.flash > 0, r.active, r.moving);
+    }
     for (const e of this.level.exits) {
       const p = P((e.min[0] + e.max[0] + 1) / 2, e.min[1]);
       if (p.facing > 0.12) drawExit(c, p.x, p.y, p.scale, time);
@@ -694,6 +765,7 @@ export class Game {
     // Lemmo's (far ones first)
     const vis: { l: Lemmo; p: ReturnType<typeof P> }[] = [];
     for (const l of this.sim.lemmos) {
+      if (l.state === 'teleporting') continue;
       let x = l.x, y = l.y;
       if (l.state === 'bashing') x += l.dir * clamp((l.cyc - 0.15) / 0.85, 0, 1);
       if (l.state === 'mining' && l.cyc < 0.68) {
@@ -707,22 +779,9 @@ export class Game {
     }
     vis.sort((a, b) => a.p.facing - b.p.facing);
 
-    // hover pick
-    this.hover = null;
-    if (this.mouse.x >= 0 && !this.mouse.dragging) {
-      let best = Infinity;
-      for (const { l, p } of vis) {
-        if (l.type === 3) continue;
-        const d = Math.hypot(this.mouse.x - p.x, this.mouse.y - (p.y - p.scale * 1.6 * l.g));
-        const r = Math.max(14, p.scale * 2.6);
-        if (d > r) continue;
-        const score = d - (this.sim.canAssign(l, this.selected) ? 1000 : 0);
-        if (score < best) {
-          best = score;
-          this.hover = l;
-        }
-      }
-    }
+    // hover pick (mouse only: touch picks on release)
+    this.lastVis = vis;
+    this.hover = this.mouse.x >= 0 && !this.mouse.dragging && !this.touchMode ? this.pick(this.mouse.x, this.mouse.y, 14) : null;
     const lemScale = this.mode === 'flat' ? 1.35 : 1;
     for (const { l, p } of vis) drawLemmo(c, l, p.x, p.y, p.scale * lemScale, { face: l.dir, hover: l === this.hover, time });
 
@@ -741,7 +800,8 @@ export class Game {
     const tip = this.ui.tooltip;
     if (this.hover) {
       const l = this.hover;
-      const tags = [l.climber ? 'Climber' : '', l.floater ? 'Floater' : '', l.type === 1 ? 'Swimmer' : l.type === 2 ? 'Acid-proof' : ''].filter(Boolean);
+      const tags = [l.climber ? 'Climber' : '', l.floater ? 'Floater' : '', l.type === 1 ? 'Swimmer' : l.type === 2 ? 'Acid-proof' : '',
+        l.fast > 0 ? 'Faster' : l.slow > 0 ? 'Slower' : ''].filter(Boolean);
       const can = this.sim.canAssign(l, this.selected);
       tip.innerHTML = `${STATE_LABEL[l.state] ?? l.state}${tags.length ? ` · <em>${tags.join(' · ')}</em>` : ''}${can ? '' : ' · <span style="color:#ff8aa0">can’t ' + SKILL_LABEL[this.selected].toLowerCase() + '</span>'}`;
       tip.style.left = this.mouse.x + 'px';
@@ -754,6 +814,15 @@ export class Game {
     }
   }
 }
+
+const SKILL_HELP: Record<string, string> = {
+  rocket: 'Rocket: after 5 seconds the Lemmo blasts off and blows a hole in whatever is above it',
+  cartwheel: 'Cartwheel: rolls at double speed, smashing through earth (not metal)',
+  trampoline: 'Trampoline: lies down; Lemmo\'s that land on it bounce high',
+  antigrav: 'Anti-gravity: flips the Lemmo so it walks on the ceiling',
+  slower: 'Slower: walks at half speed for 5 seconds',
+  faster: 'Faster: everything at double speed for 5 seconds',
+};
 
 export function fmtTime(s: number) {
   s = Math.max(0, Math.floor(s));

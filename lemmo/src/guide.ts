@@ -1,5 +1,5 @@
 // "How to play" guide: a tabbed, illustrated modal with live animated Lemmo’s for every skill.
-import { drawAntigrav, drawEntrance, drawExit, drawLemmo, drawPortal, drawTrap } from './art.ts';
+import { drawAntigrav, drawDoor, drawEntrance, drawExit, drawLemmo, drawPortal, drawSwitch, drawTrap } from './art.ts';
 import { ICONS } from './icons.ts';
 import { F, type Lemmo, type State } from './sim.ts';
 import { CELL_PX, TerrainPainter, THEMES } from './terrain.ts';
@@ -13,7 +13,8 @@ const METAL = '#5c6c80';
 function fakeLemmo(state: State, t: number, extra: Partial<Lemmo> = {}): Lemmo {
   return {
     id: 3, x: 0, y: 0, dir: 1, g: 1, type: 0, climber: false, floater: false, state, t, cyc: t % 1,
-    fallen: 0, umbrella: false, bricks: 6, empty: 0, bomb: null, inside: new Set(), blockCells: [], ...extra,
+    fallen: 0, umbrella: false, bricks: 6, empty: 0, bomb: null, inside: new Set(), blockCells: [],
+        fuse: null, fast: 0, slow: 0, spin: 0, by: 0, tele: null, trampCells: [], ...extra,
   };
 }
 
@@ -129,6 +130,77 @@ const SCENES: Record<string, Scene> = {
     ground(c, 0, h - 14, w, 14);
     drawAntigrav(c, w / 2, h - 14, 7, 8, 9, t);
   },
+  roller: (c, w, h, t) => {
+    ground(c, 0, h - 18, w, 18);
+    const x = w / 2 + Math.sin(t * 0.9) * (w / 2 - 30);
+    drawTrap(c, x, h - 18, 4.5, 4, t, false, true, true);
+  },
+  switches: (c, w, h, t) => {
+    ground(c, 0, h - 18, w, 18);
+    const flip = Math.floor(t / 2) % 2 ? 1 : -1;
+    drawSwitch(c, w * 0.3, h - 18, 7, 'kind1', flip, true, 3, t);
+    drawSwitch(c, w * 0.72, h - 18, 7, 'skill_pad', flip, true, 3, t);
+  },
+  doors: (c, w, h, t) => {
+    ground(c, 0, h - 18, w, 18);
+    const k = Math.min(1, Math.max(0, Math.sin(t * 1.2) * 1.4 + 0.5));
+    drawDoor(c, w / 2, h - 18, 6, 3, 11, k >= 1 ? 0.999 : k, 3, t);
+    c.fillStyle = METAL;
+    if (k >= 1) c.fillRect(w / 2 - 9, h - 18 - 66, 18, 66);
+  },
+  speedpad: (c, w, h, t) => {
+    ground(c, 0, h - 18, w, 18);
+    drawSwitch(c, w / 2, h - 18, 7, 'kind4', 0, true, 6, t);
+    const x = ((t * 40) % (w + 40)) - 20;
+    drawLemmo(c, fakeLemmo('walking', t * 2, { fast: x > w / 2 ? 1 : 0 }), x, h - 18, S * 0.9, { face: 1, hover: false, time: t });
+  },
+  flood: (c, w, h, t) => {
+    ground(c, 0, h - 10, w, 10, METAL, METAL);
+    c.fillStyle = METAL;
+    c.fillRect(20, 20, 8, h - 30);
+    c.fillRect(w - 28, 20, 8, h - 30);
+    const lvl = (Math.sin(t * 0.8) * 0.5 + 0.5) * (h - 40);
+    c.fillStyle = 'rgba(56,140,255,0.85)';
+    c.fillRect(28, h - 10 - lvl, w - 56, lvl);
+    c.fillStyle = 'rgba(255,255,255,0.7)';
+    c.fillRect(28, h - 10 - lvl, w - 56, 2);
+  },
+  rocket: (c, w, h, t) => {
+    ground(c, 0, h - 16, w, 16);
+    ground(c, 0, 0, w, 14, METAL, METAL);
+    const k = t % 3;
+    const y = k < 1 ? h - 16 : Math.max(30, h - 16 - (k - 1) * 120);
+    drawLemmo(c, fakeLemmo(k < 1 ? 'walking' : 'rocketing', t, { fuse: k < 1 ? 1 - k : null }), w / 2, y, S, { face: 1, hover: false, time: t });
+  },
+  cartwheel: (c, w, h, t) => {
+    ground(c, 0, h - 18, w, 18);
+    const x = ((t * 50) % (w + 40)) - 20;
+    drawLemmo(c, fakeLemmo('cartwheeling', t), x, h - 18, S, { face: 1, hover: false, time: t });
+  },
+  trampoline: (c, w, h, t) => {
+    ground(c, 0, h - 16, w, 16);
+    drawLemmo(c, fakeLemmo('trampoline', t), w / 2, h - 16, S, { face: 1, hover: false, time: t });
+    const k = (t * 0.7) % 1;
+    const y = h - 16 - 3 * S - Math.sin(k * Math.PI) * Math.max(0, h - 16 - 3 * S - 4 * S);
+    drawLemmo(c, fakeLemmo('bouncing', t), w / 2 - 30 + k * 60, y, S * 0.85, { face: 1, hover: false, time: t });
+  },
+  antigravskill: (c, w, h, t) => {
+    ground(c, 0, h - 14, w, 14);
+    ground(c, 0, 0, w, 14);
+    const up = Math.floor(t / 2.5) % 2 === 1;
+    const x = ((t * 24) % (w + 40)) - 20;
+    drawLemmo(c, fakeLemmo('walking', t, { g: up ? -1 : 1 }), x, up ? 14 : h - 14, S * 0.85, { face: 1, hover: false, time: t });
+  },
+  slower: (c, w, h, t) => {
+    ground(c, 0, h - 18, w, 18);
+    const x = ((t * 12) % (w + 40)) - 20;
+    drawLemmo(c, fakeLemmo('walking', t * 0.5, { slow: 1 }), x, h - 18, S, { face: 1, hover: false, time: t });
+  },
+  faster: (c, w, h, t) => {
+    ground(c, 0, h - 18, w, 18);
+    const x = ((t * 48) % (w + 40)) - 20;
+    drawLemmo(c, fakeLemmo('walking', t * 2, { fast: 1 }), x, h - 18, S, { face: 1, hover: false, time: t });
+  },
   portal: (c, w, h, t) => {
     ground(c, 0, h - 16, w, 16);
     drawPortal(c, w / 2, h - 16, 9, t);
@@ -210,10 +282,24 @@ const OBJECTS = [
   ['balloon', 'Balloon', 'The exit. Every Lemmo that reaches the basket counts as saved.'],
   ['swimmer', 'Swimmers', 'Lemmo’s from a blue hatch can wade through water.'],
   ['acidproof', 'Acid-proof', 'Lemmo’s from a green hatch are safe in acid.'],
-  ['trap', 'Traps', 'Saws and crushers grab any Lemmo that wanders in, then reset for a moment.'],
-  ['antigrav', 'Anti-gravity', 'Flips gravity, so Lemmo’s fall upward and walk on ceilings.'],
-  ['portal', 'Portals', 'Step in one and pop out of its twin somewhere else.'],
+  ['trap', 'Traps', 'Saws and crushers grab any Lemmo that wanders in, then reset for a moment. Some can be switched off.'],
+  ['roller', 'Deathrollers', 'Spiked drums that roll along a track, smashing through earth and turning back at metal.'],
+  ['antigrav', 'Anti-gravity', 'Glowing pads that flip a Lemmo walking over them, so it falls upward and walks on the ceiling. A dim field is switched off.'],
+  ['portal', 'Portals', 'Step in one and pop out of its partner a moment later. Not every link goes both ways.'],
+  ['switches', 'Levers and buttons', 'A lever flips when a Lemmo walks over it in the direction it leans. A button works once. Both open doors, drain pools and switch traps.'],
+  ['doors', 'Metal doors', 'Slide shut to block a way through, or open to clear it. A number means it only lets that many Lemmo’s pass. Don’t get caught in one as it closes.'],
+  ['speedpad', 'Speed pads', 'Chevrons that make every Lemmo crossing them run at double speed for a few seconds.'],
+  ['flood', 'Rising water', 'Some pools fill or drain when a switch is thrown. Swimmers love it; nobody else does.'],
   ['rat', 'Evil rats', 'They patrol the level and catch any Lemmo they touch. Keep your Lemmo’s away from them.'],
+] as const;
+
+const SPECIAL_SKILLS = [
+  ['rocket', 'Rocket', '5 s fuse', 'After a countdown the Lemmo shoots upward and blows a hole in the first thing it hits.'],
+  ['cartwheel', 'Cartwheel', 'Up to 5 s', 'Rolls at double speed, smashing a tunnel through earth. Metal and one-way walls stop it.'],
+  ['trampoline', 'Trampoline', 'Stays put', 'Lies down and turns walkers like a blocker. Lemmo’s that land on it bounce high into the air.'],
+  ['antigravskill', 'Anti-gravity', 'Instant', 'Flips the Lemmo so it falls upward and walks on the ceiling.'],
+  ['slower', 'Slower', '5 s', 'Walks and climbs at half speed.'],
+  ['faster', 'Faster', '5 s', 'Does everything at double speed.'],
 ] as const;
 
 const TABS = ['Basics', 'Skills', 'World', 'Controls', 'Tips'] as const;
@@ -252,6 +338,12 @@ function html(tab: (typeof TABS)[number]): string {
             <div class="gbody"><div class="ghead">${ICONS[id]}<b>${name}</b><kbd>${key}</kbd><span class="tag">${tag}</span></div><p>${text}</p></div></div>`).join('')}
           <div class="gcard danger"><div class="scene-wrap" data-s="nuke"></div>
             <div class="gbody"><div class="ghead">${ICONS.nuke}<b>Nuke</b><kbd>N</kbd><kbd>N</kbd></div><p>The emergency button: every Lemmo on screen becomes a bomber and no more come out. Click it twice to confirm.</p></div></div>
+        </div>
+        <h2>Special skills</h2>
+        <p class="lead">Extra skills from the original game. When a level hands one out it appears after the Digger, on keys <kbd>9</kbd> and <kbd>0</kbd>. You can add them to your own levels in the Level Editor.</p>
+        <div class="cards">${SPECIAL_SKILLS.map(([id, name, tag, text]) => `
+          <div class="gcard"><div class="scene-wrap" data-s="${id}"></div>
+            <div class="gbody"><div class="ghead">${ICONS[id === 'antigravskill' ? 'antigrav' : id]}<b>${name}</b><span class="tag">${tag}</span></div><p>${text}</p></div></div>`).join('')}
         </div>`;
     case 'World':
       return `
@@ -281,6 +373,14 @@ function html(tab: (typeof TABS)[number]): string {
           <div><span>Spin the drum / look up and down</span><span>Drag, or <kbd>A</kbd> <kbd>D</kbd> <kbd>W</kbd> <kbd>S</kbd> / arrow keys</span></div>
           <div><span>Zoom</span><span>Mouse wheel, or <kbd>Space</kbd> for a quick close-up</span></div>
           <div><span>Jump anywhere</span><span>Click the minimap</span></div>
+        </div>
+        <h3>On a touch screen</h3>
+        <div class="ctable">
+          <div><span>Assign the selected skill</span><span>Tap a skill, then tap a Lemmo</span></div>
+          <div><span>Spin the drum (cylinder view)</span><span>Drag with one finger</span></div>
+          <div><span>Zoom (cylinder view)</span><span>Pinch</span></div>
+          <div><span>Nuke</span><span>Tap Nuke twice</span></div>
+          <div><span>More room</span><span>Turn the device sideways</span></div>
         </div>`;
     case 'Tips':
       return `

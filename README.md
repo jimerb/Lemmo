@@ -36,8 +36,9 @@
   bricks, how each digger carves terrain and more were recovered by reverse-engineering the
   original executable and level files. See [`docs/SPEC.md`](docs/SPEC.md).
 - **The levels are the originals.** All 102 levels, with their terrain, hatches, balloons,
-  water, lava, acid, traps, anti-gravity zones, portals and rats, are converted from the
-  game's own data files and included in this repo, so it's **playable straight from a clone**.
+  water, lava, acid, traps, deathrollers, levers, buttons, sliding doors, rising pools, speed pads,
+  anti-gravity zones, portals and rats, are converted from the game's own data files and included
+  in this repo, so it's **playable straight from a clone**.
 - **The sound is new.** Every effect is synthesized in code and the music is a generative
   soundtrack that gets its own tune for each level. No original recordings are included. If you
   own the CD you can drop in the original audio (see [Original audio](#original-audio-optional)).
@@ -53,7 +54,9 @@
 | 🧑‍🎨 **New art** | Vector lemmos with an animation for every action, bevelled procedural terrain in five themes, glowing fluids and particles. |
 | 🎚️ **Separate mixer** | Independent music and effects volume, each with its own mute. Settings persist. |
 | 📖 **Built-in guide** | Animated how-to-play guide (<kbd>I</kbd> or the ⓘ button) covering skills, terrain, hazards, controls and tips. |
-| 🛠️ **Level Editor (beta)** | Paint terrain, place hatches, exits, traps, anti-gravity fields and teleporters, set the win rules, then test-play to verify. Your levels show up under **User levels · Sandbox**. |
+| 🛠️ **Level Editor (beta)** | Paint terrain; place hatches, exits, traps, deathrollers, anti-gravity fields and teleporters; wire levers and buttons to doors and pools; set the win rules, test-play to verify, and share the level as a link. Your levels show up under **User levels · Sandbox**. Works with touch too. |
+| 🕹️ **Living levels** | Levers, buttons and timed plates open doors, flood or drain pools and switch traps on and off. Deathrollers roll along their tracks, portals link up exactly as in the original, and the six special skills work. |
+| 📱 **Touch friendly** | Tap a skill, tap a Lemmo. Drag and pinch in cylinder view, plus a compact layout for phones in either orientation. |
 | 🗺️ **Five islands** | Easy, Medium, Hard, Very Hard and Special, with progress and best scores saved in the browser. |
 | ⚡ **Runs anywhere** | Pure Canvas 2D, no WebGL and no runtime dependencies. Fine on software-rendered machines and VMs. |
 | 🎵 **Synth sound and music** | Code-generated effects and an upbeat generative soundtrack, a different tune for every level. Original audio is optional. |
@@ -90,18 +93,33 @@ required number reach the **hot-air balloon** before the timer runs out.
 | <kbd>8</kbd> | **Digger** | Digs straight down, three cells wide. |
 | <kbd>N</kbd> ×2 | **Nuke** | Turns every lemmo into a bomber. |
 
+**Special skills.** The original game has a ninth "special" slot. No campaign level hands one out,
+but you can give them out in the Level Editor, and they then appear after the Digger on keys
+<kbd>9</kbd> and <kbd>0</kbd>:
+
+| Skill | What it does |
+|---|---|
+| **Rocket** | 5-second fuse, then flies upward at 25 rows/s and blasts a hole in the first thing it hits. |
+| **Cartwheel** | Rolls at double speed for up to 5 s, smashing a 3-row tunnel through earth (not metal or one-way walls). |
+| **Trampoline** | Lies down and turns walkers like a blocker. Lemmos landing on it bounce about 24 rows high. |
+| **Anti-gravity** | Flips the lemmo so it falls upward and walks on the ceiling. |
+| **Slower / Faster** | Half walking speed, or everything at double speed, for 5 s. |
+
 ### Controls
 
 | Action | Input |
 |---|---|
-| Assign skill | Click a lemmo |
-| Select skill | <kbd>1</kbd>–<kbd>8</kbd> or the dock |
+| Assign skill | Click (or tap) a lemmo |
+| Select skill | <kbd>1</kbd>–<kbd>8</kbd> (<kbd>9</kbd>, <kbd>0</kbd> for special skills) or the dock |
 | Release rate | <kbd>−</kbd> / <kbd>+</kbd> or the dock buttons (hold to repeat) |
 | Pause / fast-forward | <kbd>P</kbd> / <kbd>F</kbd> (cycles ×1, ×2, ×4) |
 | Panorama ↔ cylinder view | <kbd>V</kbd> |
 | Guide | <kbd>I</kbd> |
 | Pause menu | <kbd>Esc</kbd> |
-| Cylinder view only | Drag to spin and pan, wheel to zoom, <kbd>Space</kbd> to zoom in close, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrow keys, click the minimap |
+| Cylinder view only | Drag to spin and pan, wheel or pinch to zoom, <kbd>Space</kbd> to zoom in close, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrow keys, click the minimap |
+
+On a touch screen, tap a skill and then tap a lemmo. Taps get a generous target, and a short message
+explains when a lemmo can't take the skill. Everything on the keyboard also has a button.
 
 ## Level Editor (beta)
 
@@ -114,20 +132,32 @@ small starter puzzle, or a copy of any campaign level.
 - **Objects:** hatches (Lemmo count, release rate, direction, normal/swimmer/acid-proof), exits,
   saw traps, anti-gravity fields and teleporter pairs. Exits, traps and teleporters snap to the ground.
   A dotted line under each hatch shows where its Lemmo's land and turns red if the fall is fatal.
-- **Win rules:** how many Lemmo's must be saved, the time limit, how many of each skill, and
-  whether the Nuke button is allowed.
+- **Deathrollers:** place one, then click out its track point by point. Click the first point again
+  for a loop, otherwise it runs back and forth. Set its speed in the panel.
+- **Machines:** sliding **doors** (open or closed at the start, optionally closing by themselves
+  after a number of Lemmo's), **pools** of water, lava or acid (full or empty at the start), and
+  **switches**: levers, one-shot buttons, timed plates and speed pads. Place a switch, then click what
+  it controls. Each link is a plain choice like *lever right: open / close* or *pressed: fill / drain*,
+  and a dashed line shows what's wired to what. Switches can also turn traps, rollers, anti-gravity
+  fields and other switches on and off.
+- **Win rules:** how many Lemmo's must be saved, the time limit, how many of each skill (including
+  the six special skills), and whether the Nuke button is allowed.
 - **Check:** lists blocking problems (no hatch, no exit, impossible goal) and likely mistakes
   (fatal drops, buried exits, unpaired teleporters). A *dry run* plays the level with no skills,
   so you can tell whether it's too easy.
 - **Verify:** *Test play* runs the real game. Beat your level once and it's marked **Verified**.
   Any later edit clears that.
 - Levels autosave to the browser (`localStorage`), with undo/redo. Export/import a level as a
-  `.lemmo.json` file to back it up or share it.
+  `.lemmo.json` file to back it up.
+- **Share by link:** the share button copies a link with the whole level packed into it (deflated and
+  base64url-encoded in the `#share=` part, usually around 1–4 KB). Whoever opens it can play it and keep a
+  copy. Nothing is uploaded.
+- **Touch:** one finger uses the current tool, two fingers pan and pinch-zoom, and taps that place
+  objects act when the finger lifts. Box and Fill have a *Clear* option in place of right-dragging.
 
 Play your levels for fun under **Level select → User levels · Sandbox**. They don't count toward
-campaign progress. The editor only offers mechanics the simulation runs today. Skill pads, switches,
-moving traps and rising fluids from the original levels aren't editable yet (see
-[Known gaps](#known-gaps-and-roadmap)); when you remix a campaign level, that data is kept as it is.
+campaign progress. When you remix a campaign level its levers, doors, deathrollers and pools are kept
+and still work.
 
 ## Getting started
 
@@ -281,6 +311,11 @@ All values come from the original executable (addresses in [`docs/SPEC.md`](docs
 | Release interval | 5.0 s at rate 1 down to 0.2 s at rate 99 (original `RELEASERATE.PC` table) |
 | Water / acid | deadly unless the lemmo is a swimmer / acid-proof (set by its hatch) |
 | Lava | always deadly |
+| Rising / falling pools | water 2 rows/s, acid 1 row/s, lava 0.5 rows/s |
+| Sliding doors | close or open in 1/3 s; closed doors are solid metal; a lemmo caught in a closing door is lost |
+| Deathrollers | follow their track at the level's speed, carving through earth and reversing at metal or the track's end |
+| Speed pads | Faster for 5 s (the whole lemmo runs twice per tick) |
+| Teleporters | the lemmo vanishes for the portal's delay (0.5–3 s), then drops out at its linked partner |
 
 ## Testing
 
@@ -289,11 +324,15 @@ npm test
 ```
 
 - **`test/fuzz.ts`** plays every level for 4 simulated minutes with pseudo-random skill
-  assignments plus a nuke, and fails on exceptions or invalid lemmo positions.
+  assignments (special skills included) plus a nuke, and fails on exceptions or invalid lemmo positions.
+- **`test/mechanics-test.ts`** checks switches, doors, counting doors, rising/draining pools, deathrollers,
+  speed pads, spinner pads, portal pairing (including the original's one-way links) and every special skill,
+  then runs campaign levels that use them.
 - **`test/sim-test.ts`** checks rules against real levels. For example, *Just Climb* saves 10/10 with
   climbers and 0/10 without, and *Just Float* saves 10/10 with floaters.
 - **`test/editor-test.ts`** covers the editor's data layer: terrain encoding round-trips on every
-  level, validation, import/export, remixing, and the starter template being solvable with one builder.
+  level, validation, import/export, remixing, the starter template being solvable with one builder,
+  editor-built doors, levers, pools and deathrollers working in the simulation, and share links.
 
 The type checker runs as part of `npm run build`.
 
@@ -311,17 +350,24 @@ publishing.
 
 ## Known gaps and roadmap
 
-Most gaps are features the original game had whose exact behaviour hasn't been fully
-reverse-engineered yet:
+These features of the original are now reverse-engineered from the executable and playable. Details
+are in [`docs/SPEC.md`](docs/SPEC.md) §3.8–3.9:
 
-- [ ] Skill pads, levers and switches (present in the data, not yet interactive)
-- [ ] Special skills (rocket, cartwheel, faster, slower, trampoline). No shipped level puts them in the panel.
-- [ ] Rising and falling fluid levels (fluids are currently static)
-- [ ] Moving traps follow their paths (currently static kill zones)
-- [ ] Portal pairing confirmed against the original (currently paired in file order)
-- [ ] Touch controls and mobile layout polish
+- [x] Skill pads, levers and switches: one-shot buttons, direction-sensitive levers, timed plates and speed
+  pads send *on*, *off* and *set* commands to doors, pools, traps and other triggers
+- [x] Special skills (rocket, cartwheel, trampoline, anti-gravity, slower, faster), offered through the Level Editor
+- [x] Rising and falling fluid levels
+- [x] Moving traps follow their paths (deathrollers carve through earth and can switch tracks)
+- [x] Portal pairing matches the original: each teleporter names its partner, and some links are one-way
+- [x] Touch controls and mobile layout polish
+- [x] Level Editor: place and wire up levers, doors, deathroller tracks and rising pools; touch editing; sharing levels by link
+
+Still to do:
+
 - [ ] Optional original sprite set as an alternative to the new art
-- [ ] Level Editor: skill pads, switches, moving traps and rising fluids once the simulation supports them; touch editing; sharing levels by link
+- [ ] Runtime confirmation against the original under Wine. A few details are inferred rather than read
+  directly from code: trap animation lengths, the exact rows a deathroller cuts, and the cartwheel's
+  floor handling. SPEC marks these [I].
 
 ## Contributing
 

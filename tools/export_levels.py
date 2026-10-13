@@ -72,6 +72,33 @@ def entrance_type(e):
     return 2 if 'lem_box_acid' in names else 1 if 'lem_box_water' in names else 0
 
 
+def s32(v):
+    return v - (1 << 32) if v >= 1 << 31 else v
+
+
+def cmds(rs):
+    return None if rs is None else [[s32(r[0]) if r[0] >= 1 << 31 else r[0], r[1], r[2], r[3]] for r in rs]
+
+
+def trigger(t):
+    out = dict(placed(t), kind=t['kind'], value=s32(t['value']) if isinstance(t.get('value'), int) else None,
+               rects=cmds(t.get('rects')), rects2=cmds(t.get('rects2')), rect=t.get('rect'),
+               delay=t['f98'], flag=t['ba0'], active=t['b38'])
+    if t['kind'] == 'kind4':
+        out['dir'] = s32(t['bc'])
+        out['cmd'] = t['rect'][:3] + [0]
+    return out
+
+
+def trap(o):
+    out = dict(placed(o), cls=o['class'], name=o['name'], anim=o['anim'], sound1=o['sound1'],
+               sound2=o['sound2'], active=o['b38'], killAll=o['b1d1'], oneShot=o['b1d3'])
+    if o['class'] == 'DYNA':
+        out.update(path=o['path1'], path2=o['path2'], box=o['v208'] + o['v218'], speed=o['f1f8'],
+                   seg=o['u1e8'], s=o['f1f0'], reverse=o['b200'])
+    return out
+
+
 def export(path):
     L = lvlparse.parse(path)
     c = L['cylinder']
@@ -93,16 +120,20 @@ def export(path):
                            dir=-1 if e['ub4'] == 0xffff else 1, lemType=entrance_type(e))
                       for e in L['entrances']],
         'exits': [dict(placed(e), variant=e['n98']) for e in L['exits']],
-        'fluids': [dict(placed(f), type=FLUIDS.get(f['fluid_type'], f['fluid_type']), mode=f['mode'],
+        'fluids': [dict(placed(f), type=FLUIDS.get(f['fluid_type'], f['fluid_type']), mode=f['mode'], active=f['b38'],
                         levelA=f['level_a'], levelB=f['level_b']) for f in L['fluids']],
-        'triggers': [dict(placed(t), kind=t['kind'], value=t.get('value'),
-                          rects=t.get('rects'), rects2=t.get('rects2'), rect=t.get('rect'))
-                     for t in L['triggers']],
-        'traps': [dict(placed(o), cls=o['class'], name=o['name'], anim=o['anim'],
-                       sound1=o['sound1'], sound2=o['sound2']) for o in L['objects']],
-        'teleporters': [dict(placed(o), sound1=o['sound1'], sound2=o['sound2']) for o in L['list1f90']],
-        'counters': [{'pos': xyz(o['pos']), 'id': o['id'], 'values': o['v40'],
-                      'limit': o['b4']} for o in L['list1f60']],
+        'triggers': [trigger(t) for t in L['triggers']],
+        'traps': [trap(o) for o in L['objects']],
+        'paths': [{'closed': p['closed'], 'name': p['name'], 'junctions': p['ints'],
+                   'keys': [{'len': round(k['t'], 4) if k['t'] != float('inf') else 1e9, 'n': k['n'],
+                             'p': xyz(k['a']), 'v': xyz(k['b'])} for k in p['keys']]}
+                  for p in L['paths']],
+        'teleporters': [dict(placed(o), partner=o['u98'], delay=o['fa0'], exit=xyz(o['v1b0'][:2]),
+                             sound1=o['sound1'], sound2=o['sound2']) for o in L['list1f90']],
+        # "Counter" objects (list 0x1f60) are sliding metal doors; some count Lemmo's through.
+        'counters': [{'pos': xyz(o['pos']), 'id': o['id'], 'values': o['v40'], 'rect': o['v40'],
+                      'active': o['b38'], 'mode': o['b4'], 'open': o['a0'] == 1, 'count': o['ac'], 'countDir': s32(o['a8'])}
+                     for o in L['list1f60']],
         'preplacedLemmos': [{'pos': xyz(l['pos']), 'dir': l['dir'], 'gravity': l['gravity'],
                                'climber': l['climber'], 'floater': l['floater'], 'type': l['type'],
                                'blocking': l.get('starts_blocking', False)}

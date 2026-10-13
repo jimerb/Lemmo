@@ -4,7 +4,7 @@ import { loadIndex, loadLevel, tierOf, TIERS, type LevelIndexEntry } from './lev
 import { ICONS } from './icons.ts';
 import { openGuide } from './guide.ts';
 import { BETA, EICONS, Editor, editorHub, esc, newLevelDialog, userLevelCards, type EditorNav } from './editor.ts';
-import { getUserLevel, listUserLevels, recordPlay, totalLemmos, type UserLevel } from './userlevels.ts';
+import { fromShareCode, getUserLevel, listUserLevels, newUserLevel, putUserLevel, recordPlay, totalLemmos, type UserLevel } from './userlevels.ts';
 
 const app = document.getElementById('app')!;
 const audio = new Audio();
@@ -182,8 +182,52 @@ function playUser(id: string, test: boolean) {
   if (import.meta.env.DEV) (window as any).lemmo = game;
 }
 
+/** A level arrived in the URL (#share=…): show it and offer to play or edit a copy. */
+async function openShared(code: string) {
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!game && !editor) menu();
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  const m = document.createElement('div');
+  m.className = 'modal';
+  back.append(m);
+  app.append(back);
+  try {
+    const { title, level } = await fromShareCode(code);
+    const total = totalLemmos(level);
+    m.innerHTML = `<div class="sub">Shared level</div><h3>${esc(title)}</h3>
+      <div class="facts"><div class="fact"><b>${total}</b><span>Lemmo's</span></div><div class="fact"><b>${level.toSave}</b><span>To save</span></div>
+      <div class="fact"><b>${fmtTime(level.timeLimit)}</b><span>Time</span></div></div>
+      <div class="hint">Playing or editing it saves a copy to your <b>User levels</b>, so you can come back to it or remix it.</div>
+      <div class="actions"><button class="btn ghost" data-a="no">Not now</button><button class="btn" data-a="edit">${EICONS.edit} Edit</button><button class="btn primary" data-a="play">${ICONS.play} Play</button></div>`;
+    const keep = (then: (id: string) => void) => {
+      const u = newUserLevel(level, title);
+      if (!putUserLevel(u)) {
+        m.querySelector('.hint')!.textContent = 'Browser storage is full. Delete or export some levels first.';
+        return;
+      }
+      back.remove();
+      then(u.id);
+    };
+    m.querySelector<HTMLElement>('[data-a=no]')!.onclick = () => back.remove();
+    m.querySelector<HTMLElement>('[data-a=play]')!.onclick = () => keep((id) => playUser(id, false));
+    m.querySelector<HTMLElement>('[data-a=edit]')!.onclick = () => keep((id) => edit(id));
+  } catch (e) {
+    m.innerHTML = `<h3>Couldn't open that level</h3><div class="sub">${esc((e as Error).message)}</div><div class="actions"><button class="btn primary">OK</button></div>`;
+    m.querySelector('button')!.onclick = () => back.remove();
+  }
+}
+
+const shareInHash = () => (location.hash.startsWith('#share=') ? location.hash.slice(7) : null);
+window.addEventListener('hashchange', () => {
+  const code = shareInHash();
+  if (code) openShared(code);
+});
+
 loadIndex().then((rows) => {
   index = rows;
+  const shared = shareInHash();
+  if (shared) return openShared(shared);
   const q = new URLSearchParams(location.search);
   const want = q.get('level');
   const e = want && index.find((r) => r.file?.toLowerCase() === want.toLowerCase());

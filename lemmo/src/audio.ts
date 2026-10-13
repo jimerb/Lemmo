@@ -6,7 +6,7 @@ import { GenerativeMusic, synthSfx } from './synth.ts';
 const SOUND_NAMES = [
   'letsgo', 'door', 'action', 'chink', 'mine', 'minemetal', 'explode', 'ohno', 'fallsplat', 'yippee',
   'die', 'fire', 'bubble', 'glug2', 'splat', 'thud', 'antigrav', 'teleport', 'beepselect', 'mousepre',
-  'fanfarestart', 'balloon', 'changeop',
+  'fanfarestart', 'balloon', 'changeop', 'lever', 'forcef', 'speedpad', 'rumble', 'rocket', 'boing',
 ];
 
 export interface AudioSettings {

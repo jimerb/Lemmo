@@ -242,6 +242,23 @@ export function drawLemmo(c: Ctx, l: Lemmo, sx: number, sy: number, s: number, o
     c.shadowBlur = 0;
   }
   if (l.g < 0) c.scale(1, -1); // anti-gravity walkers hang upside down
+  if (l.spin > 0) {
+    // the anti-gravity flip: a quick somersault
+    c.translate(0, -1.4);
+    c.rotate((1 - l.spin / 0.6) * TAU * o.face);
+    c.translate(0, 1.4);
+  }
+  if (l.fast > 0 || l.slow > 0) {
+    c.strokeStyle = l.fast > 0 ? 'rgba(255,200,87,0.7)' : 'rgba(140,170,255,0.6)';
+    c.lineWidth = 0.18;
+    for (let i = 0; i < 3; i++) {
+      const y = -0.8 - i * 0.7;
+      c.beginPath();
+      c.moveTo(-o.face * (1.1 + (i % 2) * 0.4), y);
+      c.lineTo(-o.face * (2.2 + (l.fast > 0 ? 0.8 : 0)), y);
+      c.stroke();
+    }
+  }
   const face = o.face;
   switch (l.state) {
     case 'splatting': {
@@ -296,6 +313,44 @@ export function drawLemmo(c: Ctx, l: Lemmo, sx: number, sy: number, s: number, o
       c.globalAlpha = Math.max(0, 1 - l.t / 0.5);
       body(c, { ...l, state: 'ohno' }, t, face, s);
       break;
+    case 'cartwheeling':
+      c.translate(0, -1.4);
+      c.rotate(face * l.t * 12);
+      c.translate(0, 1.4);
+      body(c, { ...l, state: 'blocking' }, t, face, s);
+      break;
+    case 'rocketing': {
+      // flame below the feet, Lemmo stretched upward
+      for (let i = 0; i < 5; i++) {
+        const ft = (l.t * 6 + i / 5) % 1;
+        c.fillStyle = `rgba(255,${Math.round(220 - ft * 150)},60,${1 - ft})`;
+        c.beginPath();
+        c.arc(Math.sin(i * 2.3 + l.t * 30) * 0.3, ft * 2.6, 0.5 * (1 - ft) + 0.15, 0, TAU);
+        c.fill();
+      }
+      body(c, { ...l, state: 'shrugging' }, t, face, s);
+      break;
+    }
+    case 'trampoline': {
+      // lying on its back with a springy mat on top
+      c.save();
+      c.translate(0, -0.45);
+      c.rotate(-face * Math.PI / 2);
+      c.scale(0.8, 0.8);
+      body(c, { ...l, state: 'blocking' }, t, face, s);
+      c.restore();
+      const sag = Math.max(0, Math.sin(l.t * 9)) * 0.15;
+      c.strokeStyle = '#5df2b0';
+      c.lineWidth = 0.28;
+      c.beginPath();
+      c.moveTo(-1.8, -1.6);
+      c.quadraticCurveTo(0, -1.6 + sag * 4, 1.8, -1.6);
+      c.stroke();
+      break;
+    }
+    case 'bouncing':
+      body(c, { ...l, state: 'falling' }, t, face, s);
+      break;
     case 'flipping': {
       const k = Math.min(1, l.t / 0.35);
       c.translate(face * k * 0.8, -k * 0.5);
@@ -311,15 +366,16 @@ export function drawLemmo(c: Ctx, l: Lemmo, sx: number, sy: number, s: number, o
       }
   }
   c.restore();
-  if (l.bomb !== null && l.state !== 'dead') {
-    const n = Math.ceil(l.bomb);
+  const fuse = l.bomb ?? l.fuse;
+  if (fuse !== null && l.state !== 'dead') {
+    const n = Math.ceil(fuse);
     const y = sy - s * 5.6 * (l.g < 0 ? -1 : 1);
     c.save();
     c.font = `700 ${Math.max(11, s * 1.6)}px Outfit, system-ui, sans-serif`;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     const w = Math.max(18, s * 2.4);
-    c.fillStyle = 'rgba(255,70,90,0.92)';
+    c.fillStyle = l.bomb !== null ? 'rgba(255,70,90,0.92)' : 'rgba(255,160,40,0.92)';
     c.beginPath();
     c.roundRect(sx - w / 2, y - w / 2, w, w, w / 2);
     c.fill();
@@ -431,10 +487,34 @@ export function drawExit(c: Ctx, sx: number, sy: number, s: number, time: number
   c.restore();
 }
 
-export function drawTrap(c: Ctx, sx: number, sy: number, s: number, w: number, time: number, active: boolean) {
+export function drawTrap(c: Ctx, sx: number, sy: number, s: number, w: number, time: number, active: boolean, on = true, moving = false) {
   c.save();
   c.translate(sx, sy);
   c.scale(s, s);
+  if (!on) c.globalAlpha = 0.4;
+  if (moving) {
+    // deathroller: a spiked drum
+    c.translate(0, -2.4);
+    c.rotate(time * 6);
+    c.fillStyle = '#4a4f66';
+    c.strokeStyle = active ? '#ff3b5c' : '#cfd6e6';
+    c.lineWidth = 0.25;
+    c.beginPath();
+    c.arc(0, 0, 2.1, 0, TAU);
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#cfd6e6';
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU;
+      c.beginPath();
+      c.moveTo(Math.cos(a - 0.15) * 2.1, Math.sin(a - 0.15) * 2.1);
+      c.lineTo(Math.cos(a) * 2.9, Math.sin(a) * 2.9);
+      c.lineTo(Math.cos(a + 0.15) * 2.1, Math.sin(a + 0.15) * 2.1);
+      c.fill();
+    }
+    c.restore();
+    return;
+  }
   const W = Math.max(3, w);
   c.fillStyle = '#26132a';
   c.strokeStyle = active ? '#ff3b5c' : '#ff8aa0';
@@ -445,7 +525,7 @@ export function drawTrap(c: Ctx, sx: number, sy: number, s: number, w: number, t
   c.stroke();
   // spinning saw
   c.translate(0, -2.6);
-  c.rotate(time * (active ? 9 : 3));
+  c.rotate(on ? time * (active ? 9 : 3) : 0);
   c.fillStyle = '#d7dce8';
   c.beginPath();
   for (let i = 0; i < 16; i++) {
@@ -462,10 +542,11 @@ export function drawTrap(c: Ctx, sx: number, sy: number, s: number, w: number, t
   c.restore();
 }
 
-export function drawAntigrav(c: Ctx, sx: number, sy: number, s: number, w: number, h: number, time: number) {
+export function drawAntigrav(c: Ctx, sx: number, sy: number, s: number, w: number, h: number, time: number, on = true) {
   c.save();
   c.translate(sx, sy);
   c.scale(s, s);
+  if (!on) c.globalAlpha = 0.25;
   c.strokeStyle = 'rgba(80,230,255,0.7)';
   c.lineWidth = 0.18;
   c.shadowColor = '#3de7ff';
@@ -495,6 +576,94 @@ export function drawPortal(c: Ctx, sx: number, sy: number, s: number, time: numb
     c.beginPath();
     c.ellipse(0, 0, 1.6 + i * 0.5, 2.6 + i * 0.6, 0, time * (2 + i) % TAU, (time * (2 + i) % TAU) + Math.PI * 1.4);
     c.stroke();
+  }
+  c.restore();
+}
+
+/**
+ * Switches: skill_pad (a button, pressed once), kind1 (a lever, tilted by `state` ±1),
+ * kind2 (a timed plate) and kind4 (a speed pad with chevrons).
+ */
+export function drawSwitch(c: Ctx, sx: number, sy: number, s: number, kind: string, state: number, on: boolean, w: number, time: number) {
+  c.save();
+  c.translate(sx, sy);
+  c.scale(s, s);
+  if (!on) c.globalAlpha = 0.35;
+  const W = Math.max(2.4, w);
+  c.fillStyle = '#2a3354';
+  c.strokeStyle = '#8b9ac2';
+  c.lineWidth = 0.2;
+  c.beginPath();
+  c.roundRect(-W / 2, -0.5, W, 0.5, 0.2);
+  c.fill();
+  c.stroke();
+  if (kind === 'kind1') {
+    const a = (state === 1 ? 1 : -1) * 0.6;
+    limb(c, 0, -0.4, Math.sin(a) * 2.4, -0.4 - Math.cos(a) * 2.4, 0.28, '#cfd6e6');
+    c.fillStyle = state === 1 ? '#5df2b0' : '#ff8a5c';
+    c.beginPath();
+    c.arc(Math.sin(a) * 2.4, -0.4 - Math.cos(a) * 2.4, 0.55, 0, TAU);
+    c.fill();
+  } else if (kind === 'kind4') {
+    c.strokeStyle = state === 1 ? '#ffe28a' : '#ffc857';
+    c.lineWidth = 0.25;
+    for (let i = 0; i < 3; i++) {
+      const k = (time * 2 + i / 3) % 1;
+      c.globalAlpha = (on ? 1 : 0.35) * (1 - k);
+      const x = -W / 2 + k * W;
+      c.beginPath();
+      c.moveTo(x - 0.4, -1.4);
+      c.lineTo(x + 0.2, -0.9);
+      c.lineTo(x - 0.4, -0.4);
+      c.stroke();
+    }
+  } else {
+    const down = state === 1;
+    c.fillStyle = kind === 'kind2' ? (down ? '#ffc857' : '#b88a2e') : down ? '#5df2b0' : '#ff4d6d';
+    c.shadowColor = c.fillStyle;
+    c.shadowBlur = down ? 0 : 8;
+    c.beginPath();
+    c.roundRect(-W * 0.3, down ? -0.75 : -1.1, W * 0.6, down ? 0.3 : 0.65, 0.2);
+    c.fill();
+  }
+  c.restore();
+}
+
+/**
+ * A sliding door while it moves (`prog` 0 = open, 1 = closed; a closed door is drawn by the terrain as
+ * metal). Counting doors show how many Lemmo's may still pass.
+ */
+export function drawDoor(c: Ctx, sx: number, sy: number, s: number, w: number, h: number, prog: number, left: number | null, time: number) {
+  c.save();
+  c.translate(sx, sy);
+  c.scale(s, s);
+  if (prog > 0 && prog < 1) {
+    c.globalAlpha = 0.25 + prog * 0.6;
+    c.fillStyle = '#6b7a90';
+    c.strokeStyle = '#cfd6e6';
+    c.lineWidth = 0.2;
+    c.fillRect(-w / 2, -h, w, h);
+    c.strokeRect(-w / 2, -h, w, h);
+    c.globalAlpha = 1;
+  }
+  if (prog < 1) {
+    // rails marking where the door will close
+    c.strokeStyle = `rgba(160,180,210,${0.35 + 0.15 * Math.sin(time * 3)})`;
+    c.lineWidth = 0.18;
+    c.setLineDash([0.6, 0.5]);
+    c.strokeRect(-w / 2, -h, w, h);
+    c.setLineDash([]);
+  }
+  if (left !== null) {
+    c.font = '700 2.2px Outfit, system-ui, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = 'rgba(16,20,38,0.85)';
+    c.beginPath();
+    c.roundRect(-1.6, -h - 3, 3.2, 2.4, 0.6);
+    c.fill();
+    c.fillStyle = left > 0 ? '#ffc857' : '#ff4d6d';
+    c.fillText(String(left), 0, -h - 1.75);
   }
   c.restore();
 }

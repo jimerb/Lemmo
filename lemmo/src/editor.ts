@@ -1,16 +1,16 @@
 // Level Editor (beta): paint terrain, place objects, set the win conditions, check and test-play
 // user levels. Levels use the same LevelData format as the campaign, so Sim and Game run them as-is.
-// Only mechanics the simulation supports are offered (see README "Known gaps"): static fluids,
-// static saw traps, anti-gravity fields and teleporters paired in file order.
+// Objects: hatches, exits, saw traps, deathrollers with tracks, switches (levers, buttons, timed plates,
+// speed pads) wired to doors, pools, traps and fields, anti-gravity fields and teleporter pairs.
 import './editor.css';
-import { drawAntigrav, drawEntrance, drawExit, drawLemmo, drawPortal, drawTrap } from './art.ts';
+import { drawAntigrav, drawEntrance, drawExit, drawLemmo, drawPortal, drawSwitch, drawTrap } from './art.ts';
 import { fmtTime } from './game.ts';
 import { ICONS } from './icons.ts';
 import {
-  decodeCells, encodeCells, loadLevel, TIERS, tierOf, type EntranceData, type Footprint, type LevelData,
-  type LevelIndexEntry, type TriggerData,
+  decodeCells, encodeCells, loadLevel, TIERS, tierOf, type DoorData, type EntranceData, type FluidData, type Footprint,
+  type LevelData, type LevelIndexEntry, type TrapData, type TriggerData,
 } from './level.ts';
-import { F, SKILLS, SPLAT_ROWS, type Lemmo } from './sim.ts';
+import { ALL_SKILLS, F, SKILLS, SPECIALS, SPLAT_ROWS, type Lemmo, type Skill } from './sim.ts';
 import { CELL_PX, TerrainPainter, THEMES, themeFor } from './terrain.ts';
 import * as U from './userlevels.ts';
 
@@ -52,6 +52,12 @@ export const EICONS: Record<string, string> = {
   trap: svg('<circle cx="16" cy="13" r="7" stroke-dasharray="3 2"/><circle cx="16" cy="13" r="2" fill="#ff3b5c" stroke="#ff3b5c"/><path d="M5 27h22v-4H5z"/>'),
   antigrav: svg('<rect x="7" y="4" width="18" height="24" rx="3" stroke-dasharray="3 3" stroke="#3de7ff"/><path d="M11 18l5-5 5 5M11 25l5-5 5 5"/>'),
   portal: svg('<ellipse cx="11" cy="16" rx="5" ry="9" stroke="#be78ff"/><ellipse cx="23" cy="16" rx="4" ry="7" stroke="#be78ff" stroke-opacity=".6"/>'),
+  switch: svg('<path d="M5 26h22"/><path d="M16 25L22 9"/><circle cx="22" cy="8" r="3" fill="#5df2b0" stroke="#5df2b0"/>'),
+  door: svg('<rect x="9" y="4" width="14" height="23" rx="1.5" fill="currentColor" fill-opacity=".25"/><path d="M5 27h22M12 9v13M16 9v13M20 9v13" stroke-opacity=".6"/>'),
+  pool: svg('<path d="M4 8v18h24V8"/><path d="M6 15c3-2 5 2 8 0s5 2 8 0 4 2 4 0v9H6z" fill="#388cff" stroke="#5ab0ff"/>'),
+  roller: svg('<circle cx="11" cy="20" r="6"/><path d="M11 12v-2M11 30v-2M3 20h2M17 20h2" /><path d="M19 9h9" stroke="#ff8a5c" stroke-dasharray="3 3"/><path d="M25 6l3 3-3 3" stroke="#ff8a5c"/>'),
+  link: svg('<path d="M13 19l6-6"/><path d="M10 14l-3 3a4 4 0 0 0 6 6l3-3M22 18l3-3a4 4 0 0 0-6-6l-3 3"/>'),
+  share: svg('<circle cx="24" cy="7" r="3"/><circle cx="8" cy="16" r="3"/><circle cx="24" cy="25" r="3"/><path d="M11 14.5l10-6M11 17.5l10 6"/>'),
   undo: svg('<path d="M9 13h12a6 6 0 0 1 0 12h-6"/><path d="M13 8l-5 5 5 5"/>'),
   redo: svg('<path d="M23 13H11a6 6 0 0 0 0 12h6"/><path d="M19 8l5 5-5 5"/>'),
   plus: svg('<path d="M16 6v20M6 16h20"/>'),
@@ -105,8 +111,9 @@ function swatchCss(m: Material, theme = THEMES[0]) {
   }
 }
 
-type Tool = 'select' | 'brush' | 'eraser' | 'rect' | 'fill' | 'pan' | 'entrance' | 'exit' | 'trap' | 'antigrav' | 'portal';
-type ListKey = 'entrances' | 'exits' | 'traps' | 'triggers' | 'teleporters';
+type Tool = 'select' | 'brush' | 'eraser' | 'rect' | 'fill' | 'pan' | 'entrance' | 'exit' | 'trap' | 'roller' | 'switch'
+  | 'door' | 'pool' | 'antigrav' | 'portal';
+type ListKey = 'entrances' | 'exits' | 'traps' | 'triggers' | 'teleporters' | 'counters' | 'fluids';
 
 const TOOLS: { id: Tool; name: string; key?: string; hint: string }[] = [
   { id: 'select', name: 'Select', key: 'V', hint: 'Click an object to edit it · drag to move · arrow keys nudge · Delete removes' },
@@ -118,19 +125,41 @@ const TOOLS: { id: Tool; name: string; key?: string; hint: string }[] = [
   { id: 'entrance', name: 'Hatch', hint: 'Click to place a hatch. Lemmo\'s drop from its bottom; the dotted line shows where they land' },
   { id: 'exit', name: 'Exit', hint: 'Click to place an exit. It snaps onto the ground below the cursor' },
   { id: 'trap', name: 'Trap', hint: 'Click to place a saw trap. It snaps onto the ground and catches one Lemmo at a time' },
+  { id: 'roller', name: 'Roller', hint: 'Click to place a deathroller, then click to add points to its track · Enter or Esc finishes · click the first point to close a loop' },
+  { id: 'switch', name: 'Switch', hint: 'Click to place a lever, then click the door, pool, trap or field it should control' },
+  { id: 'door', name: 'Door', hint: 'Click to place a sliding metal door on the ground. Switches open and close it' },
+  { id: 'pool', name: 'Pool', hint: 'Click to place a pool of water, lava or acid on the ground. Switches fill and drain it' },
   { id: 'antigrav', name: 'Anti-grav', hint: 'Click to place an anti-gravity field. Lemmo\'s passing through it flip upside down' },
   { id: 'portal', name: 'Teleport', hint: 'Click once for the first end, then again for its partner' },
 ];
 const PLACE_LIST: Partial<Record<Tool, ListKey>> = {
-  entrance: 'entrances', exit: 'exits', trap: 'traps', antigrav: 'triggers', portal: 'teleporters',
+  entrance: 'entrances', exit: 'exits', trap: 'traps', roller: 'traps', switch: 'triggers', door: 'counters', pool: 'fluids',
+  antigrav: 'triggers', portal: 'teleporters',
 };
-const KIND: Record<ListKey, string> = {
-  entrances: 'Hatch', exits: 'Exit', traps: 'Trap', triggers: 'Anti-gravity field', teleporters: 'Teleporter',
-};
-const DRAW_ORDER: ListKey[] = ['triggers', 'teleporters', 'traps', 'exits', 'entrances'];
+const DRAW_ORDER: ListKey[] = ['fluids', 'counters', 'triggers', 'teleporters', 'traps', 'exits', 'entrances'];
+const isRoller = (t: TrapData) => !!t.track || t.anim === 'deathroller';
+/** The tool that places this object (also picks its icon). */
+function toolFor(list: ListKey, f: Footprint): Tool {
+  if (list === 'triggers') return (f as TriggerData).kind === 'antigrav' ? 'antigrav' : 'switch';
+  if (list === 'traps') return isRoller(f as TrapData) ? 'roller' : 'trap';
+  return (Object.keys(PLACE_LIST) as Tool[]).find((t) => PLACE_LIST[t] === list)!;
+}
+/** What to call this object in the panel. */
+function kindName(list: ListKey, f: Footprint): string {
+  switch (list) {
+    case 'entrances': return 'Hatch';
+    case 'exits': return 'Exit';
+    case 'traps': return isRoller(f as TrapData) ? 'Deathroller' : 'Trap';
+    case 'triggers': return U.switchName((f as TriggerData).kind);
+    case 'teleporters': return 'Teleporter';
+    case 'counters': return 'Door';
+    case 'fluids': return 'Pool';
+  }
+}
 const TERRAIN_TOOLS: Tool[] = ['brush', 'eraser', 'rect', 'fill'];
 const SKILL_LABEL: Record<string, string> = {
   climber: 'Climber', floater: 'Floater', bomber: 'Bomber', blocker: 'Blocker', builder: 'Builder', basher: 'Basher', miner: 'Miner', digger: 'Digger',
+  rocket: 'Rocket', cartwheel: 'Cartwheel', trampoline: 'Trampoline', antigrav: 'Anti-gravity', slower: 'Slower', faster: 'Faster',
 };
 
 interface Sel { list: ListKey; i: number }
@@ -166,6 +195,14 @@ export class Editor {
   private sel: Sel | null = null;
   private hoverObj: Sel | null = null;
   private pendingPortal: number | null = null;
+  /** Index of the switch waiting for the next click to pick a target. */
+  private pendingLink: number | null = null;
+  /** Index of the deathroller whose track is being drawn. */
+  private pendingTrack: number | null = null;
+  /** Box and fill tools clear instead of paint (the touch-friendly alternative to right-dragging). */
+  private clearMode = false;
+  private touches = new Map<number, { x: number; y: number }>();
+  private pinch: { d: number; mx: number; my: number } | null = null;
   private undoStack: Snap[] = [];
   private redoStack: Snap[] = [];
   private changed = new Set<number>();
@@ -185,6 +222,9 @@ export class Editor {
   constructor(private u: U.UserLevel, private nav: EditorNav) {
     this.level = structuredClone(u.level);
     this.level.title = u.title;
+    this.level.fluids ??= [];
+    this.level.counters ??= [];
+    for (const d of this.level.counters) if (!d.min || !d.max) U.doorFootprint(d);
     this.cells = decodeCells(this.level);
     this.painter = new TerrainPainter(this.cells, ROWS, this.theme);
     const mem = memory.get(u.id);
@@ -198,6 +238,11 @@ export class Editor {
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(this.stage);
     this.raf = requestAnimationFrame(() => this.frame());
+  }
+
+  /** A level object list, typed as plain footprints (doors carry min/max in the editor). */
+  private arr(list: ListKey): Footprint[] {
+    return ((this.level[list] as unknown as Footprint[] | undefined) ?? []);
   }
 
   private get theme() {
@@ -243,10 +288,16 @@ export class Editor {
     const help = h('button', 'btn icon', ICONS.info);
     help.title = 'Editor help (?)';
     help.onclick = () => this.showHelp();
+    const share = h('button', 'btn icon', EICONS.share);
+    share.title = 'Copy a share link';
+    share.onclick = () => {
+      this.flushSave();
+      shareDialog(this.root, this.u);
+    };
     const test = h('button', 'btn primary', `${ICONS.play} Test play`);
     test.title = 'Play your level (T). Beat it once to verify it.';
     test.onclick = () => this.testPlay();
-    top.append(back, title, badge, h('div', 'spacer'), saved, undo, redo, help, test);
+    top.append(back, title, badge, h('div', 'spacer'), saved, undo, redo, share, help, test);
 
     const tools = h('div', 'ed-tools');
     const group = (label: string, ids: Tool[]) => {
@@ -261,7 +312,8 @@ export class Editor {
       }
     };
     group('Terrain', ['select', 'brush', 'eraser', 'rect', 'fill', 'pan']);
-    group('Objects', ['entrance', 'exit', 'trap', 'antigrav', 'portal']);
+    group('Objects', ['entrance', 'exit', 'trap', 'roller', 'antigrav', 'portal']);
+    group('Machines', ['switch', 'door', 'pool']);
 
     const hint = h('div', 'ed-hint');
     const status = h('div', 'ed-status');
@@ -335,7 +387,7 @@ export class Editor {
     }
     const errors = issues.filter((i) => i.severity === 'error').length;
     const warns = issues.filter((i) => i.severity === 'warn').length;
-    this.ui.tab_tool.textContent = this.sel ? KIND[this.sel.list] : TOOLS.find((t) => t.id === this.tool)!.name;
+    this.ui.tab_tool.textContent = this.sel ? kindName(this.sel.list, this.arr(this.sel.list)[this.sel.i]) : TOOLS.find((t) => t.id === this.tool)!.name;
     this.ui.tab_level.textContent = 'Win rules';
     this.ui.tab_check.innerHTML = `Check${errors ? ` <i class="dot bad">${errors}</i>` : warns ? ` <i class="dot warn">${warns}</i>` : ' <i class="dot good">✓</i>'}`;
     for (const id of ['tool', 'level', 'check']) this.ui['tab_' + id].classList.toggle('active', this.tab === id);
@@ -430,6 +482,19 @@ export class Editor {
       }
       s.append(r, shape);
     }
+    if (t === 'rect' || t === 'fill') {
+      const s = this.section(t === 'rect' ? 'Box' : 'Fill');
+      const mode = h('div', 'ed-seg');
+      for (const [clear, label] of [[false, 'Paint'], [true, 'Clear']] as const) {
+        const b = h('button', clear === this.clearMode ? 'active' : '', label);
+        b.onclick = () => {
+          this.clearMode = clear;
+          this.renderPanel();
+        };
+        mode.append(b);
+      }
+      s.append(mode, h('p', 'ed-note', 'Clear empties the cells instead (right-dragging does the same with a mouse).'));
+    }
     if (t === 'brush' || t === 'rect') {
       const s = this.section('Options');
       const c = h('label', 'ed-check', `<input type="checkbox" ${this.onlyEmpty ? 'checked' : ''}><span>Only paint into empty space</span>`);
@@ -440,46 +505,147 @@ export class Editor {
     if (t === 'select' || t === 'pan') this.renderObjectList();
     const place = PLACE_LIST[t];
     if (place) {
-      const info: Record<ListKey, string> = {
-        entrances: 'Lemmo\'s drop out of the hatch at the release rate. Set how many come out, which way they walk and what kind they are after placing it. The dotted line shows where they land: it turns red if the drop is fatal.',
-        exits: 'Every Lemmo that walks into an exit is saved. Players win by saving enough of them before time runs out.',
-        traps: 'A spinning saw that kills one Lemmo, then needs 1.5 seconds to reset. Static: it doesn\'t move.',
-        triggers: 'Lemmo\'s that enter the field have gravity flipped: they fall up and walk on ceilings until they pass through another field.',
-        teleporters: 'Teleporters come in pairs: a Lemmo entering one end pops out of the other. Place the first end, then click again for its partner.',
+      const info: Partial<Record<Tool, string>> = {
+        entrance: 'Lemmo\'s drop out of the hatch at the release rate. Set how many come out, which way they walk and what kind they are after placing it. The dotted line shows where they land: it turns red if the drop is fatal.',
+        exit: 'Every Lemmo that walks into an exit is saved. Players win by saving enough of them before time runs out.',
+        trap: 'A spinning saw that kills one Lemmo, then needs 1.5 seconds to reset. It doesn\'t move, but a switch can turn it on and off.',
+        roller: 'A spiked drum that rolls along a track, killing every Lemmo it touches and smashing through earth. It turns back at metal and at the end of an open track. Place it, then click to add track points.',
+        switch: 'Levers flip when a Lemmo walks over them in the direction they lean. Buttons work once. Timed plates switch back after a few seconds. Speed pads make Lemmo\'s run fast. Link a switch to doors, pools, traps and fields to control them.',
+        door: 'A sliding metal door. Closed, it\'s solid steel; open, Lemmo\'s walk straight through. Switches open and close it, and a counting door shuts by itself after letting a number of Lemmo\'s through. Lemmo\'s caught in a closing door are lost.',
+        pool: 'Water, lava or acid that a switch can fill or drain: water rises 2 rows a second, acid 1, lava ½. A pool can start full or empty.',
+        antigrav: 'Lemmo\'s that enter the field have gravity flipped: they fall up and walk on ceilings until they pass through another field. A switch can turn it on and off.',
+        portal: 'Teleporters come in pairs: a Lemmo entering one end pops out of the other. Place the first end, then click again for its partner.',
       };
-      this.section(KIND[place], `<p class="ed-note">${info[place]}</p>`);
+      this.section(TOOLS.find((x) => x.id === t)!.name, `<p class="ed-note">${info[t]}</p>`);
       this.renderObjectList();
     }
+  }
+
+  private label(list: ListKey, i: number) {
+    if (list === 'teleporters') return `Teleporter ${(i >> 1) + 1}${i % 2 ? 'B' : 'A'}`;
+    return `${kindName(list, this.arr(list)[i])} ${this.ordinal(list, i)}`;
   }
 
   private renderObjectList() {
     const items: string[] = [];
     for (const list of [...DRAW_ORDER].reverse()) {
-      this.level[list].forEach((f, i) => {
-        if (list === 'triggers' && (f as TriggerData).kind !== 'antigrav') return;
-        const label = list === 'teleporters' ? `Teleporter ${(i >> 1) + 1}${i % 2 ? 'B' : 'A'}` : `${KIND[list]} ${this.ordinal(list, i)}`;
-        items.push(`<button class="ed-obj" data-l="${list}" data-i="${i}">${EICONS[toolOf(list)]}<span>${label}</span><small>${Math.round(f.pos[0])}, ${Math.round(f.min[1])}</small></button>`);
+      this.arr(list).forEach((f, i) => {
+        items.push(`<button class="ed-obj" data-l="${list}" data-i="${i}">${EICONS[toolFor(list, f)]}<span>${this.label(list, i)}</span><small>${Math.round(f.pos[0])}, ${Math.round(f.min[1])}</small></button>`);
       });
     }
     const s = this.section('Objects in this level', items.length ? `<div class="ed-objs">${items.join('')}</div>` : '<p class="ed-note">None yet. Use the object tools on the left to add a hatch and an exit.</p>');
     s.querySelectorAll<HTMLElement>('.ed-obj').forEach((b) => {
       b.onclick = () => {
         this.select({ list: b.dataset.l as ListKey, i: Number(b.dataset.i) });
-        const f = this.level[this.sel!.list][this.sel!.i];
+        const f = this.arr(this.sel!.list)[this.sel!.i];
         this.centerOn(f.pos[0], f.min[1] + 3);
       };
     });
   }
 
+  /** 1-based number among objects of the same kind (so "Lever 2", "Button 1"). */
   private ordinal(list: ListKey, i: number) {
-    if (list !== 'triggers') return i + 1;
-    return this.level.triggers.slice(0, i + 1).filter((t) => t.kind === 'antigrav').length;
+    const arr = this.arr(list);
+    const name = kindName(list, arr[i]);
+    return arr.slice(0, i + 1).filter((f) => kindName(list, f) === name).length;
+  }
+
+  /** Find a level object by its id (for switch links). */
+  private byId(id: number): Sel | null {
+    for (const list of DRAW_ORDER) {
+      const i = this.arr(list).findIndex((f) => f.id === id);
+      if (i >= 0) return { list, i };
+    }
+    return null;
+  }
+
+  /** "Starts switched on" for anything a switch can turn on and off. */
+  private activeToggle(o: { active?: boolean }, text: string) {
+    const c = h('label', 'ed-check', `<input type="checkbox" ${o.active !== false ? 'checked' : ''}><span>${text}</span>`);
+    c.querySelector('input')!.onchange = (e) => {
+      this.pushUndo();
+      o.active = (e.target as HTMLInputElement).checked;
+      this.touched();
+      this.renderPanel();
+    };
+    return c;
+  }
+
+  /** Lists the switches that control the selected object. */
+  private controlledBy(id: number) {
+    const names: string[] = [];
+    this.level.triggers.forEach((t, i) => {
+      if (t.kind === 'antigrav') return;
+      if (U.switchLinks(t).some((k) => k.target === id)) names.push(this.label('triggers', i));
+    });
+    return names.length ? h('p', 'ed-note', `Controlled by <b>${names.map(esc).join(', ')}</b>.`) : null;
+  }
+
+  private renderSwitch(t: TriggerData, i: number) {
+    const s = this.section('Switch');
+    s.append(this.seg<string>(U.SWITCH_KINDS as [string, string][], t.kind, (k) => {
+      const links = U.switchLinks(t);
+      U.setSwitchKind(t, k);
+      U.setSwitchLinks(t, links);
+    }));
+    if (t.kind === 'kind1') {
+      s.append(h('div', 'ed-label', 'At the start it leans'),
+        this.seg<number>([[-1, '← Left'], [1, 'Right →']], t.value === 1 ? 1 : -1, (v) => (t.value = v)),
+        h('p', 'ed-note', 'A Lemmo walking right flips a left-leaning lever to the right, and one walking left flips it back. Each flip applies the matching action below.'));
+    } else if (t.kind === 'skill_pad') {
+      s.append(h('p', 'ed-note', 'The first Lemmo to step on the button presses it. It only works once.'));
+    } else if (t.kind === 'kind2') {
+      s.append(this.range('Switches back after', 1, 30, Math.round(t.delay || 5), (v) => `${v} s`, (v) => (t.delay = v)),
+        h('p', 'ed-note', 'Applies the action while Lemmo\'s keep stepping on it, and undoes it once nobody has for that long.'));
+    } else {
+      s.append(h('div', 'ed-label', 'Effect'),
+        this.seg<number>([[1, 'Faster'], [2, 'Slower']], t.cmd?.[2] === 2 ? 2 : 1, (v) => (t.cmd = [-2, 6, v, 0])),
+        h('div', 'ed-label', 'For Lemmo\'s walking'),
+        this.seg<number>([[0, 'Both ways'], [-1, '← Left'], [1, 'Right →']], t.dir ?? 0, (v) => (t.dir = v)),
+        h('p', 'ed-note', 'Every Lemmo crossing it runs at double (or half) speed for 5 seconds.'));
+    }
+    s.append(this.activeToggle(t, 'Starts switched on'));
+    if (t.kind === 'kind4') return;
+
+    const ls = this.section('Links');
+    const links = U.switchLinks(t);
+    const when = t.kind === 'kind1' ? 'Leaning right' : t.kind === 'kind2' ? 'While pressed' : 'When pressed';
+    if (!links.length) ls.append(h('p', 'ed-note warn', 'Not linked to anything yet. Link it to a door, pool, trap, field or another switch.'));
+    for (const [k, link] of links.entries()) {
+      const target = this.byId(link.target);
+      const kind = U.linkTargets(this.level).find((x) => x.id === link.target)?.kind ?? 'door';
+      const verbs = U.LINK_VERBS[kind];
+      const row = h('div', 'ed-link');
+      const name = h('button', 'ed-link-name', target ? `${EICONS[toolFor(target.list, this.arr(target.list)[target.i])]}<span>${esc(this.label(target.list, target.i))}</span>` : '<span>Missing object</span>');
+      name.title = 'Show it';
+      name.onclick = () => target && this.select(target);
+      const del = h('button', 'btn icon ghost', '✕');
+      del.title = 'Remove this link';
+      del.onclick = () => {
+        this.pushUndo();
+        U.setSwitchLinks(t, links.filter((_, j) => j !== k));
+        this.touched();
+        this.renderPanel();
+      };
+      row.append(name, del);
+      ls.append(row, h('div', 'ed-label', when),
+        this.seg<boolean>([[true, verbs[0]], [false, verbs[1]]], link.on, (v) => {
+          links[k] = { ...link, on: v };
+          U.setSwitchLinks(t, links);
+        }));
+    }
+    const linking = this.pendingLink === i;
+    const add = h('button', linking ? 'btn active' : 'btn', linking ? 'Stop linking' : `${EICONS.link} Link an object`);
+    add.onclick = () => (linking ? this.finishModes() : this.startLink(i));
+    ls.append(add);
+    if (t.kind === 'kind1' && links.length) ls.append(h('p', 'ed-note', 'Leaning left does the opposite.'));
+    if (t.kind === 'kind2' && links.length) ls.append(h('p', 'ed-note', 'When it switches back, it does the opposite.'));
   }
 
   private renderSelection() {
     const { list, i } = this.sel!;
-    const f = this.level[list][i];
-    const head = h('div', 'ed-selhead', `${EICONS[toolOf(list)]}<b>${list === 'teleporters' ? `Teleporter ${(i >> 1) + 1}${i % 2 ? 'B' : 'A'}` : `${KIND[list]} ${this.ordinal(list, i)}`}</b><small>Column ${Math.round(f.pos[0])} · Row ${Math.round(f.min[1])}</small>`);
+    const f = this.arr(list)[i];
+    const head = h('div', 'ed-selhead', `${EICONS[toolFor(list, f)]}<b>${esc(this.label(list, i))}</b><small>Column ${Math.round(f.pos[0])} · Row ${Math.round(f.min[1])}</small>`);
     const desel = h('button', 'btn icon ghost', '✕');
     desel.title = 'Deselect (Esc)';
     desel.onclick = () => this.select(null);
@@ -500,6 +666,8 @@ export class Editor {
         this.seg<number>([[0, 'Normal'], [1, 'Swimmer'], [2, 'Acid-proof']], e.lemType, (v) => (e.lemType = v)),
         h('p', 'ed-note', 'Players can raise the release rate during play, and lower it down to 1.'),
       );
+    } else if (list === 'triggers' && (f as TriggerData).kind !== 'antigrav') {
+      this.renderSwitch(f as TriggerData, i);
     } else if (list === 'triggers') {
       const t = f as TriggerData;
       const s = this.section('Field size');
@@ -507,6 +675,7 @@ export class Editor {
         this.range('Width', 1, 24, t.max[0] - t.min[0] + 1, String, (v) => (t.max[0] = t.min[0] + v - 1)),
         this.range('Height', 1, 24, t.max[1] - t.min[1] + 1, String, (v) => (t.max[1] = t.min[1] + v - 1)),
         h('p', 'ed-note', 'Gravity flips once each time a Lemmo enters the field.'),
+        this.activeToggle(t, 'Starts switched on'),
       );
     } else if (list === 'teleporters') {
       const partner = this.level.teleporters[i ^ 1];
@@ -515,10 +684,87 @@ export class Editor {
         : 'This end has no partner yet, so it does nothing. Click in the level to place its partner.'}</p>`);
     } else if (list === 'exits') {
       this.section('Exit', '<p class="ed-note">Lemmo\'s walking or falling into the basket are saved. You can have several exits.</p>');
+    } else if (list === 'counters') {
+      const d = f as unknown as DoorData;
+      const s = this.section('Door');
+      const size = (fn: () => void) => () => { fn(); U.syncDoorRect(d); };
+      s.append(
+        this.range('Width', 1, 16, d.max![0] - d.min![0] + 1, String, (v) => size(() => (d.max![0] = d.min![0] + v - 1))()),
+        this.range('Height', 1, 48, d.max![1] - d.min![1] + 1, String, (v) => size(() => (d.max![1] = Math.min(ROWS - 2, d.min![1] + v - 1)))()),
+        h('div', 'ed-label', 'At the start it is'),
+        this.seg<boolean>([[false, 'Closed'], [true, 'Open']], d.open, (v) => (d.open = v)),
+        h('div', 'ed-label', 'Closes by itself'),
+        this.seg<number>([[0, 'Never'], [2, 'After walkers'], [1, 'After fallers']], d.mode, (v) => {
+          d.mode = v;
+          if (v) d.open = true;
+        }),
+      );
+      if (d.mode) {
+        s.append(this.range('Lemmo\'s it lets through', 1, 50, d.count || 5, String, (v) => (d.count = v)),
+          h('p', 'ed-note', `It counts Lemmo's ${d.mode === 2 ? 'walking' : 'falling'} into it and shuts once that many have gone through. The number shows above it in play.`));
+      }
+      const by = this.controlledBy(d.id);
+      if (by) s.append(by);
+    } else if (list === 'fluids') {
+      const pl = f as FluidData;
+      const s = this.section('Pool');
+      s.append(
+        this.seg<FluidData['type']>([['water', 'Water'], ['lava', 'Lava'], ['acid', 'Acid']], pl.type, (v) => (pl.type = v)),
+        this.range('Width', 2, 64, pl.max[0] - pl.min[0], String, (v) => (pl.max[0] = pl.min[0] + v)),
+        this.range('Depth', 1, 48, pl.max[1] - pl.min[1], String, (v) => {
+          pl.max[1] = Math.min(ROWS - 2, pl.min[1] + v);
+          pl.levelA = pl.max[1] - pl.min[1];
+        }),
+        h('div', 'ed-label', 'At the start it is'),
+        this.seg<number>([[0, 'Full'], [1, 'Empty']], pl.mode ?? 0, (v) => (pl.mode = v)),
+        h('p', 'ed-note', 'Fill and drain it with a switch. Make sure the sides and bottom are solid, or Lemmo\'s will walk into the liquid from the side.'),
+      );
+      const by = this.controlledBy(pl.id);
+      if (by) s.append(by);
+    } else if (isRoller(f as TrapData)) {
+      const t = f as TrapData;
+      const s = this.section('Deathroller');
+      const pts = t.track?.length ?? 0;
+      s.append(
+        this.range('Speed', 1, 40, Math.round(t.speed ?? 6), (v) => `${v} cells/s`, (v) => (t.speed = v)),
+        h('p', 'ed-note', pts < 2 ? 'No track yet: it stays where it is. Add points to give it somewhere to go.'
+          : `Track: ${pts} points, ${t.loop ? 'a closed loop' : 'back and forth between the ends'}.`),
+      );
+      if (pts >= 3) {
+        const c = h('label', 'ed-check', `<input type="checkbox" ${t.loop ? 'checked' : ''}><span>Loop back to the start</span>`);
+        c.querySelector('input')!.onchange = (e) => {
+          this.pushUndo();
+          t.loop = (e.target as HTMLInputElement).checked;
+          this.touched();
+          this.renderPanel();
+        };
+        s.append(c);
+      }
+      const row = h('div', 'ed-quick');
+      const drawing = this.pendingTrack === i;
+      const more = h('button', drawing ? 'btn active' : 'btn', drawing ? 'Finish track' : `${EICONS.plus} Add track points`);
+      more.onclick = () => (drawing ? this.finishModes() : this.startTrack(i));
+      const clear = h('button', 'btn', 'Clear track');
+      clear.onclick = () => {
+        if (pts < 2) return;
+        this.pushUndo();
+        t.track = t.track!.slice(0, 1);
+        t.loop = false;
+        this.touched();
+        this.renderPanel();
+      };
+      row.append(more, clear);
+      s.append(row, this.activeToggle(t, 'Starts rolling'));
+      const by = this.controlledBy(t.id);
+      if (by) s.append(by);
     } else {
-      this.section('Saw trap', '<p class="ed-note">Kills one Lemmo, then resets after 1.5 seconds. Lemmo\'s just walk past while it resets.</p>');
+      const t = f as TrapData;
+      const s = this.section('Saw trap', '<p class="ed-note">Kills one Lemmo, then resets after 1.5 seconds. Lemmo\'s just walk past while it resets.</p>');
+      s.append(this.activeToggle(t, 'Starts switched on'));
+      const by = this.controlledBy(t.id);
+      if (by) s.append(by);
     }
-    const del = h('button', 'btn ed-danger', `${EICONS.trash} Delete ${list === 'teleporters' ? 'teleporter pair' : KIND[list].toLowerCase()}`);
+    const del = h('button', 'btn ed-danger', `${EICONS.trash} Delete ${list === 'teleporters' ? 'teleporter pair' : kindName(list, f).toLowerCase()}`);
     del.onclick = () => this.deleteSelected();
     this.panel.append(del);
   }
@@ -551,7 +797,8 @@ export class Editor {
     }
     s2.append(quick);
     const rows = h('div', 'ed-skills');
-    for (const k of SKILLS) {
+    const specials = h('div', 'ed-skills');
+    const skillRow = (k: Skill, into: HTMLElement) => {
       const r = h('div', `ed-skill ${(l.skills[k] ?? 0) ? '' : 'zero'}`, `${ICONS[k]}<span>${SKILL_LABEL[k]}</span>`);
       const minus = h('button', 'btn', '−');
       const count = h('b', '', String(l.skills[k] ?? 0));
@@ -568,15 +815,20 @@ export class Editor {
       minus.onclick = bump(-1);
       plus.onclick = bump(1);
       r.append(minus, count, plus);
-      rows.append(r);
-    }
+      into.append(r);
+    };
+    for (const k of SKILLS) skillRow(k, rows);
+    for (const k of SPECIALS) skillRow(k, specials);
     const nuke = h('label', 'ed-check', `<input type="checkbox" ${(l.skills.nuke ?? 1) > 0 ? 'checked' : ''}><span>Allow the Nuke button</span>`);
     nuke.querySelector('input')!.onchange = (e) => {
       this.pushUndo();
       l.skills.nuke = (e.target as HTMLInputElement).checked ? 1 : 0;
       this.touched();
     };
-    s2.append(rows, nuke, h('p', 'ed-note', 'Shift-click + or − to change by 5.'));
+    s2.append(rows, nuke, h('p', 'ed-note', 'Shift-click + or − to change by 5.'),
+      h('h4', 'ed-subhead', 'Special skills'),
+      h('p', 'ed-note', 'Extra skills from the original game that no campaign level uses. Each one you give appears as an extra button (keys 9 and 0).'),
+      specials);
 
     const s3 = this.section('Look');
     const themes = h('div', 'ed-themes');
@@ -639,6 +891,7 @@ export class Editor {
   // ------------------------------------------------------------------ state changes
   private setTool(t: Tool) {
     if (this.pendingPortal !== null && t !== 'portal') this.cancelPortal();
+    this.finishModes();
     this.tool = t;
     if (t !== 'select') this.sel = null;
     this.tab = 'tool';
@@ -707,8 +960,8 @@ export class Editor {
   }
 
   private snapshot(): Snap {
-    const { entrances, exits, traps, triggers, teleporters, skills, toSave, timeLimit, theme } = this.level;
-    return { cells: this.cells.slice(), meta: JSON.stringify({ entrances, exits, traps, triggers, teleporters, skills, toSave, timeLimit, theme }) };
+    const { entrances, exits, traps, triggers, teleporters, counters, fluids, skills, toSave, timeLimit, theme } = this.level;
+    return { cells: this.cells.slice(), meta: JSON.stringify({ entrances, exits, traps, triggers, teleporters, counters, fluids, skills, toSave, timeLimit, theme }) };
   }
 
   private pushUndo() {
@@ -730,6 +983,7 @@ export class Editor {
     else this.painter.repaint(diff);
     this.sel = null;
     this.pendingPortal = null;
+    this.pendingLink = this.pendingTrack = null;
     this.touched();
     this.refreshChrome();
     this.renderPanel();
@@ -835,10 +1089,16 @@ export class Editor {
       case 'entrance': f = U.makeEntrance(x, clamp(y, 4, ROWS - 7)); break;
       case 'exit': f = U.makeExit(x, clamp(this.snapGround(x, y), 1, ROWS - 18)); break;
       case 'trap': f = U.makeTrap(x, clamp(this.snapGround(x, y), 1, ROWS - 6)); break;
+      case 'roller': f = U.makeRoller(x, clamp(this.snapGround(x, y) + 1, 3, ROWS - 5)); break;
+      case 'switch': f = U.makeSwitch(x, clamp(this.snapGround(x, y), 1, ROWS - 8)); break;
+      case 'door': f = U.makeDoor(x, clamp(this.snapGround(x, y), 1, ROWS - 10)) as Footprint; break;
+      case 'pool': f = U.makePool(x, clamp(this.snapGround(x, y), 0, ROWS - 8)); break;
       case 'antigrav': f = U.makeAntigrav(x, clamp(y, 1, ROWS - 4)); break;
       default: f = U.makePortal(x, clamp(this.snapGround(x, y), 1, ROWS - 7));
     }
-    const arr = this.level[list] as Footprint[];
+    f.id = U.freshId(this.level);
+    const arr = this.arr(list);
+    if (!this.level[list]) (this.level as unknown as Record<string, Footprint[]>)[list] = arr;
     arr.push(f);
     const i = arr.length - 1;
     if (tool === 'entrance') {
@@ -857,6 +1117,92 @@ export class Editor {
     this.sel = { list, i };
     this.touched();
     this.renderPanel();
+    if (tool === 'roller') this.startTrack(i);
+    if (tool === 'switch') this.startLink(i);
+  }
+
+  // ---- link mode: the next click on an object links it to the switch
+  private startLink(i: number) {
+    this.finishModes();
+    this.pendingLink = i;
+    this.sel = { list: 'triggers', i };
+    this.toast('Click the door, pool, trap or field this switch should control · Esc to stop');
+    this.refreshChrome();
+    this.renderPanel();
+  }
+
+  private linkTo(s: Sel | null) {
+    const si = this.pendingLink!;
+    if (!s) {
+      this.toast('Click a door, pool, trap or field · Esc or click the switch to stop');
+      return;
+    }
+    this.pendingLink = null;
+    const sw = this.level.triggers[si];
+    const target = s && this.arr(s.list)[s.i];
+    const ok = target && !(s!.list === 'triggers' && s!.i === si) && ['counters', 'fluids', 'traps', 'triggers'].includes(s!.list);
+    if (!sw || !ok) {
+      if (target && !(s!.list === 'triggers' && s!.i === si)) this.toast('Switches can control doors, pools, traps, fields and other switches');
+      this.sel = { list: 'triggers', i: si };
+      this.renderPanel();
+      return;
+    }
+    const links = U.switchLinks(sw);
+    if (links.some((k) => k.target === target.id)) this.toast('Already linked');
+    else {
+      this.pushUndo();
+      // sensible first action: a door that starts closed gets opened, an empty pool filled, and so on
+      const starts = s!.list === 'counters' ? (target as unknown as DoorData).open : s!.list === 'fluids' ? (target as FluidData).mode !== 1 : (target as { active?: boolean }).active !== false;
+      links.push({ target: target.id, on: !starts });
+      U.setSwitchLinks(sw, links);
+      this.touched();
+      this.toast(`Linked to ${this.label(s!.list, s!.i)}`);
+    }
+    this.sel = { list: 'triggers', i: si };
+    this.renderPanel();
+  }
+
+  // ---- track mode: clicks add waypoints to a deathroller's track
+  private startTrack(i: number) {
+    this.finishModes();
+    this.pendingTrack = i;
+    this.sel = { list: 'traps', i };
+    this.toast('Click to add track points · click the first point to close a loop · Enter or Esc to finish');
+    this.refreshChrome();
+    this.renderPanel();
+  }
+
+  private addTrackPoint(x: number, y: number) {
+    const t = this.level.traps[this.pendingTrack!] as TrapData | undefined;
+    if (!t?.track) return this.finishModes();
+    const first = t.track[0];
+    const last = t.track[t.track.length - 1];
+    const near = (p: number[]) => Math.abs(wrap(x - p[0] + 128) - 128) <= 1 && Math.abs(y - p[1]) <= 1;
+    if (near(last)) return;
+    this.pushUndo();
+    if (t.track.length >= 3 && near(first)) {
+      t.loop = true;
+      this.finishModes();
+      this.toast('Loop closed');
+    } else {
+      // keep the point on the same side of the wrap seam as the previous one
+      let px = x;
+      while (px - last[0] > 128) px -= COLS;
+      while (last[0] - px > 128) px += COLS;
+      t.track.push([px, clamp(y, 3, ROWS - 4)]);
+    }
+    this.touched();
+    this.renderPanel();
+  }
+
+  /** Leave link or track mode. */
+  private finishModes() {
+    const had = this.pendingLink !== null || this.pendingTrack !== null;
+    this.pendingLink = this.pendingTrack = null;
+    if (had) {
+      this.refreshChrome();
+      this.renderPanel();
+    }
   }
 
   private cancelPortal() {
@@ -879,8 +1225,16 @@ export class Editor {
       for (const j of [i, i ^ 1].filter((j) => j < tp.length).sort((a, b) => b - a)) tp.splice(j, 1);
       this.pendingPortal = null;
     } else {
-      this.level[list].splice(i, 1);
+      const id = this.arr(list)[i].id;
+      this.arr(list).splice(i, 1);
+      // drop links to the deleted object
+      for (const t of this.level.triggers) {
+        if (t.kind === 'antigrav' || t.kind === 'kind4') continue;
+        const links = U.switchLinks(t);
+        if (links.some((k) => k.target === id)) U.setSwitchLinks(t, links.filter((k) => k.target !== id));
+      }
     }
+    this.pendingLink = this.pendingTrack = null;
     this.level.toSave = clamp(this.level.toSave, 1, Math.max(1, U.totalLemmos(this.level)));
     this.sel = null;
     this.touched();
@@ -892,24 +1246,25 @@ export class Editor {
     switch (list) {
       case 'entrances': return { x0: f.min[0], x1: f.max[0] + 1, y0: y, y1: y + (f.max[1] - f.min[1] + 2) * 0.85 };
       case 'exits': return { x0: cx - 4.5, x1: cx + 4.5, y0: y, y1: y + 17.5 };
-      case 'traps': {
-        const w = Math.max(3, f.max[0] - f.min[0] + 1);
-        return { x0: cx - w / 2, x1: cx + w / 2, y0: y, y1: y + 4.6 };
-      }
-      case 'triggers': return { x0: f.min[0], x1: f.max[0] + 1, y0: y, y1: f.max[1] + 1 };
+      case 'traps': return isRoller(f as TrapData) ? { x0: f.min[0], x1: f.max[0] + 1, y0: f.min[1], y1: f.max[1] + 1 } : { x0: cx - 2, x1: cx + 2, y0: y, y1: y + 4.6 };
+      case 'triggers':
+        if ((f as TriggerData).kind !== 'antigrav') return { x0: f.min[0], x1: f.max[0] + 1, y0: y, y1: y + 3.4 };
+        return { x0: f.min[0], x1: f.max[0] + 1, y0: y, y1: f.max[1] + 1 };
+      case 'counters': return { x0: f.min[0], x1: f.max[0] + 1, y0: y, y1: f.max[1] + 1 };
+      case 'fluids': return { x0: f.min[0], x1: f.max[0], y0: y, y1: f.max[1] };
       default: return { x0: f.pos[0] - 2.8, x1: f.pos[0] + 2.8, y0: y, y1: y + 6.6 };
     }
   }
 
   private hit(col: number, row: number): Sel | null {
     const c = wrap(col);
+    const pad = 5 / this.view.ppu; // a few screen pixels of slack, so thin objects can be picked when zoomed out
     for (const list of [...DRAW_ORDER].reverse()) {
-      const arr = this.level[list];
+      const arr = this.arr(list);
       for (let i = arr.length - 1; i >= 0; i--) {
-        if (list === 'triggers' && (arr[i] as TriggerData).kind !== 'antigrav') continue;
         const b = this.bbox(list, arr[i]);
-        if (row < b.y0 || row > b.y1) continue;
-        for (const k of [-COLS, 0, COLS]) if (c + k >= b.x0 && c + k <= b.x1) return { list, i };
+        if (row < b.y0 - pad || row > b.y1 + pad) continue;
+        for (const k of [-COLS, 0, COLS]) if (c + k >= b.x0 - pad && c + k <= b.x1 + pad) return { list, i };
       }
     }
     return null;
@@ -917,7 +1272,7 @@ export class Editor {
 
   private nudge(dx: number, dy: number) {
     if (!this.sel) return;
-    const f = this.level[this.sel.list][this.sel.i];
+    const f = this.arr(this.sel.list)[this.sel.i];
     dy = clamp(dy, 1 - f.min[1], ROWS - 2 - f.max[1]);
     if (!dx && !dy) return;
     this.pushUndo();
@@ -1023,8 +1378,10 @@ export class Editor {
     else if (k === '-') this.zoomBy(1 / 1.4);
     else if (k === 't') this.testPlay();
     else if (k === '?') this.showHelp();
+    else if (k === 'enter' && (this.pendingLink !== null || this.pendingTrack !== null)) this.finishModes();
     else if (k === 'escape') {
       if (this.pendingPortal !== null) this.cancelPortal();
+      else if (this.pendingLink !== null || this.pendingTrack !== null) this.finishModes();
       else this.select(null);
     } else if ((k === 'delete' || k === 'backspace') && this.sel) {
       e.preventDefault();
@@ -1053,9 +1410,25 @@ export class Editor {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     const c = this.canvas;
+    // Touch: one finger uses the tool, two fingers pan and pinch-zoom. Taps that place things act on
+    // release, so starting a pinch never drops an object by accident.
+    let tap: { x: number; y: number; col: number; row: number } | null = null;
+    let gesture = false;
     c.addEventListener('pointerdown', (e) => {
       c.setPointerCapture(e.pointerId);
       (document.activeElement as HTMLElement | null)?.blur?.();
+      if (e.pointerType === 'touch') {
+        this.touches.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+        if (this.touches.size === 2) {
+          this.cancelDrag();
+          tap = null;
+          gesture = true;
+          const [a, b] = [...this.touches.values()];
+          this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+          return;
+        }
+        if (gesture || this.touches.size > 2) return;
+      }
       this.track(e);
       const { col, row } = this.mouse;
       const x = Math.floor(col), y = Math.floor(row);
@@ -1064,37 +1437,45 @@ export class Editor {
         this.refreshChrome();
         return;
       }
-      const erase = e.button === 2;
-      if (y < 0 || y >= ROWS) return;
-      switch (this.tool) {
-        case 'brush':
-        case 'eraser':
-          this.pushUndo();
-          this.drag = { kind: 'paint', erase: erase || this.tool === 'eraser', last: null };
-          this.paintTo(x, y);
-          break;
-        case 'rect':
-          this.drag = { kind: 'rect', erase, x0: x, y0: y };
-          break;
-        case 'fill': {
-          this.pushUndo();
-          this.flood(x, y, erase ? 0 : MATERIALS[this.material].v);
-          if (!this.commitCells()) this.undoStack.pop();
-          this.refreshChrome();
-          break;
-        }
-        case 'select': {
-          const s = this.hit(col, row);
-          this.select(s);
-          if (s) this.drag = { kind: 'move', sel: s, x0: x, y0: y, orig: JSON.stringify(this.level[s.list][s.i]), moved: false };
-          break;
-        }
-        default:
-          if (erase) return;
-          this.place(this.tool, x, y);
+      const erase = e.button === 2 || (this.clearMode && (this.tool === 'rect' || this.tool === 'fill'));
+      const clicky = this.pendingLink !== null || this.pendingTrack !== null || this.tool === 'fill' || !!PLACE_LIST[this.tool];
+      if (e.pointerType === 'touch' && clicky) {
+        tap = { x: e.offsetX, y: e.offsetY, col, row };
+        return;
       }
+      this.click(col, row, x, y, erase, e.button);
+    });
+    const tapUp = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      this.touches.delete(e.pointerId);
+      if (this.touches.size < 2) this.pinch = null;
+      if (!this.touches.size) {
+        if (tap && !gesture && Math.hypot(e.offsetX - tap.x, e.offsetY - tap.y) < 12) {
+          this.click(tap.col, tap.row, Math.floor(tap.col), Math.floor(tap.row), this.clearMode && (this.tool === 'rect' || this.tool === 'fill'), 0);
+        }
+        tap = null;
+        gesture = false;
+      }
+    };
+    c.addEventListener('pointerup', tapUp);
+    c.addEventListener('pointercancel', (e) => {
+      tap = null;
+      tapUp(e);
     });
     c.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
+        this.touches.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+        if (this.pinch && this.touches.size >= 2) {
+          const [a, b] = [...this.touches.values()];
+          const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+          this.view.c0 -= (mx - this.pinch.mx) / this.view.ppu;
+          this.view.r0 -= (my - this.pinch.my) / this.view.ppu;
+          this.zoomAt(mx, my, d / Math.max(10, this.pinch.d));
+          this.pinch = { d, mx, my };
+          return;
+        }
+        if (gesture) return;
+      }
       this.track(e);
       const d = this.drag;
       if (!d) {
@@ -1112,7 +1493,7 @@ export class Editor {
         this.clampView();
       } else if (d.kind === 'paint') this.paintTo(x, clamp(y, -20, ROWS + 20));
       else if (d.kind === 'move') {
-        const f = this.level[d.sel.list][d.sel.i];
+        const f = this.arr(d.sel.list)[d.sel.i];
         const orig = JSON.parse(d.orig) as Footprint;
         const dx = x - d.x0;
         const dy = clamp(y - d.y0, 1 - orig.min[1], ROWS - 2 - orig.max[1]);
@@ -1139,7 +1520,7 @@ export class Editor {
       } else if (d.kind === 'paint') {
         if (!this.commitCells()) this.undoStack.pop();
       } else if (d.kind === 'move' && d.moved) {
-        U.normalizeX(this.level[d.sel.list][d.sel.i]);
+        U.normalizeX(this.arr(d.sel.list)[d.sel.i]);
         this.touched();
         this.renderPanel();
       }
@@ -1158,12 +1539,69 @@ export class Editor {
     }, { passive: false });
   }
 
+  /** A press at a cell: link/track modes first, then whatever the current tool does. */
+  private click(col: number, row: number, x: number, y: number, erase: boolean, button: number) {
+    if (this.pendingLink !== null) {
+      if (button === 0) this.linkTo(this.hit(col, row));
+      return;
+    }
+    if (this.pendingTrack !== null) {
+      if (button === 0 && y >= 0 && y < ROWS) this.addTrackPoint(x, y);
+      else this.finishModes();
+      return;
+    }
+    if (y < 0 || y >= ROWS) return;
+    switch (this.tool) {
+      case 'brush':
+      case 'eraser':
+        this.pushUndo();
+        this.drag = { kind: 'paint', erase: erase || this.tool === 'eraser', last: null };
+        this.paintTo(x, y);
+        break;
+      case 'rect':
+        this.drag = { kind: 'rect', erase, x0: x, y0: y };
+        break;
+      case 'fill': {
+        this.pushUndo();
+        this.flood(x, y, erase ? 0 : MATERIALS[this.material].v);
+        if (!this.commitCells()) this.undoStack.pop();
+        this.refreshChrome();
+        break;
+      }
+      case 'select': {
+        const s = this.hit(col, row);
+        this.select(s);
+        if (s) this.drag = { kind: 'move', sel: s, x0: x, y0: y, orig: JSON.stringify(this.arr(s.list)[s.i]), moved: false };
+        break;
+      }
+      default:
+        if (erase) return;
+        this.place(this.tool, x, y);
+    }
+  }
+
+  /** A second finger arrived: throw away whatever the first one started. */
+  private cancelDrag() {
+    const d = this.drag;
+    this.drag = null;
+    if (!d) return;
+    if (d.kind === 'paint') {
+      this.changed.clear();
+      const snap = this.undoStack.pop();
+      if (snap) this.restore(snap);
+    } else if (d.kind === 'move' && d.moved) {
+      const snap = this.undoStack.pop();
+      if (snap) this.restore(snap);
+    }
+    this.refreshChrome();
+  }
+
   /** Undo snapshot of the level as it was before a drag-move started. */
   private snapshotWith(sel: Sel, orig: Footprint) {
-    const cur = this.level[sel.list][sel.i];
-    this.level[sel.list][sel.i] = orig as never;
+    const cur = this.arr(sel.list)[sel.i];
+    this.arr(sel.list)[sel.i] = orig as never;
     const s = this.snapshot().meta;
-    this.level[sel.list][sel.i] = cur as never;
+    this.arr(sel.list)[sel.i] = cur as never;
     this.refreshChrome();
     return s;
   }
@@ -1278,34 +1716,77 @@ export class Editor {
     const labels = ppu >= 2.5;
     c.textAlign = 'center';
     c.font = `700 ${clamp(ppu * 1.6, 10, 15)}px Outfit, sans-serif`;
+    const tag = (text: string, x: number, y: number, color: string) => {
+      c.fillStyle = color;
+      c.fillText(text, x, y);
+    };
     for (const list of DRAW_ORDER) {
-      l[list].forEach((f, i) => {
-        if (list === 'triggers' && (f as TriggerData).kind !== 'antigrav') return;
+      this.arr(list).forEach((f, i) => {
         const cx = (f.min[0] + f.max[0] + 1) / 2;
-        const anchor = list === 'teleporters' ? f.pos[0] : cx;
-        for (const k of this.copies(anchor, 20)) {
+        const anchor = list === 'teleporters' ? f.pos[0] : list === 'fluids' || list === 'counters' ? f.min[0] : cx;
+        for (const k of this.copies(anchor, 70)) {
           const p = this.S(anchor + k, f.min[1]);
           switch (list) {
             case 'entrances': {
               const e = f as EntranceData;
               this.drawDrop(c, e, k, time);
               drawEntrance(c, p.x, p.y, ppu, f.max[0] - f.min[0] + 1, f.max[1] - f.min[1] + 2, e.lemType, 1, time);
-              if (labels) {
-                const ly = this.S(0, f.min[1] + 6.6).y;
-                c.fillStyle = '#e8ecff';
-                c.fillText(`${e.dir > 0 ? '' : '← '}${e.lemmos}${e.dir > 0 ? ' →' : ''}`, p.x, ly);
-              }
+              if (labels) tag(`${e.dir > 0 ? '' : '← '}${e.lemmos}${e.dir > 0 ? ' →' : ''}`, p.x, this.S(0, f.min[1] + 6.6).y, '#e8ecff');
               break;
             }
             case 'exits': drawExit(c, p.x, p.y, ppu, time); break;
-            case 'traps': drawTrap(c, p.x, p.y, ppu, f.max[0] - f.min[0] + 1, time, false); break;
-            case 'triggers': drawAntigrav(c, p.x, p.y, ppu, f.max[0] - f.min[0] + 1, f.max[1] - f.min[1] + 1, time); break;
+            case 'traps': {
+              const t = f as TrapData;
+              if (isRoller(t)) {
+                this.drawTrack(c, t, k);
+                const q = this.S(t.pos[0] + k + 0.5, t.min[1]);
+                drawTrap(c, q.x, q.y, ppu, 4, time, false, t.active !== false, true);
+              } else drawTrap(c, p.x, p.y, ppu, f.max[0] - f.min[0] + 1, time, false, t.active !== false);
+              break;
+            }
+            case 'triggers': {
+              const t = f as TriggerData;
+              if (t.kind === 'antigrav') drawAntigrav(c, p.x, p.y, ppu, f.max[0] - f.min[0] + 1, f.max[1] - f.min[1] + 1, time, t.active !== false);
+              else {
+                drawSwitch(c, p.x, p.y, ppu, t.kind, t.kind === 'kind1' ? (t.value === 1 ? 1 : -1) : 0, t.active !== false, f.max[0] - f.min[0] + 1, time);
+                if (labels) tag(this.label('triggers', i), p.x, this.S(0, f.min[1] + 4.6).y, '#ffe08a');
+              }
+              break;
+            }
+            case 'counters': {
+              const d = f as unknown as DoorData;
+              const w = f.max[0] - f.min[0] + 1, ht = f.max[1] - f.min[1] + 1;
+              const q = this.S(f.min[0] + k, f.max[1] + 1);
+              c.fillStyle = d.open ? 'rgba(160,180,210,0.08)' : 'rgba(120,138,165,0.85)';
+              c.fillRect(q.x, q.y, w * ppu, ht * ppu);
+              c.strokeStyle = d.open ? 'rgba(200,215,240,0.75)' : '#d8e0ee';
+              c.lineWidth = 1.5;
+              c.setLineDash(d.open ? [4, 4] : []);
+              c.strokeRect(q.x + 0.5, q.y + 0.5, w * ppu - 1, ht * ppu - 1);
+              c.setLineDash([]);
+              if (labels) tag(`${d.mode ? `${d.count} · ` : ''}${d.open ? 'open' : 'closed'}`, q.x + (w * ppu) / 2, q.y - 6, '#d8e0ee');
+              break;
+            }
+            case 'fluids': {
+              const pl = f as FluidData;
+              const w = f.max[0] - f.min[0], ht = f.max[1] - f.min[1];
+              const q = this.S(f.min[0] + k, f.max[1]);
+              const col = pl.type === 'lava' ? [255, 96, 32] : pl.type === 'acid' ? [140, 240, 60] : [56, 140, 255];
+              if (pl.mode !== 1) {
+                c.fillStyle = `rgba(${col.join(',')},0.6)`;
+                c.fillRect(q.x, q.y, w * ppu, ht * ppu);
+              }
+              c.strokeStyle = `rgba(${col.join(',')},0.95)`;
+              c.lineWidth = 1.5;
+              c.setLineDash(pl.mode === 1 ? [4, 4] : []);
+              c.strokeRect(q.x + 0.5, q.y + 0.5, w * ppu - 1, ht * ppu - 1);
+              c.setLineDash([]);
+              if (labels) tag(pl.mode === 1 ? 'starts empty' : 'starts full', q.x + (w * ppu) / 2, q.y - 6, `rgb(${col.join(',')})`);
+              break;
+            }
             case 'teleporters': {
               drawPortal(c, p.x, p.y, ppu, time);
-              if (labels) {
-                c.fillStyle = '#d9b8ff';
-                c.fillText(`${(i >> 1) + 1}${i % 2 ? 'B' : 'A'}`, p.x, this.S(0, f.min[1] + 7.6).y);
-              }
+              if (labels) tag(`${(i >> 1) + 1}${i % 2 ? 'B' : 'A'}`, p.x, this.S(0, f.min[1] + 7.6).y, '#d9b8ff');
               break;
             }
           }
@@ -1317,24 +1798,27 @@ export class Editor {
     c.setLineDash([4, 6]);
     c.strokeStyle = 'rgba(190,120,255,0.5)';
     c.lineWidth = 1.5;
-    for (let i = 0; i + 1 < tp.length; i += 2) {
-      const a = tp[i], b = tp[i + 1];
-      let bx = b.pos[0];
-      if (bx - a.pos[0] > COLS / 2) bx -= COLS;
-      if (a.pos[0] - bx > COLS / 2) bx += COLS;
-      for (const k of this.copies(Math.min(a.pos[0], bx), Math.abs(bx - a.pos[0]) + 20)) {
-        const p = this.S(a.pos[0] + k, a.min[1] + 2.5), q = this.S(bx + k, b.min[1] + 2.5);
-        c.beginPath();
-        c.moveTo(p.x, p.y);
-        c.lineTo(q.x, q.y);
-        c.stroke();
+    for (let i = 0; i + 1 < tp.length; i += 2) this.drawLine(c, tp[i].pos[0], tp[i].min[1] + 2.5, tp[i + 1].pos[0], tp[i + 1].min[1] + 2.5);
+    // switch links: bright for the selected switch or target, faint otherwise
+    const targets = U.linkTargets(l);
+    l.triggers.forEach((t, i) => {
+      if (t.kind === 'antigrav' || t.kind === 'kind4') return;
+      for (const link of U.switchLinks(t)) {
+        const tg = targets.find((x) => x.id === link.target);
+        if (!tg) continue;
+        const sel = this.sel && ((this.sel.list === 'triggers' && this.sel.i === i) || this.arr(this.sel.list)[this.sel.i]?.id === link.target);
+        c.strokeStyle = sel ? 'rgba(255,200,87,0.95)' : 'rgba(255,200,87,0.3)';
+        c.lineWidth = sel ? 2 : 1.25;
+        c.setLineDash([6, 5]);
+        const b = this.bbox(tg.kind === 'door' ? 'counters' : tg.kind === 'pool' ? 'fluids' : tg.kind === 'switch' || tg.kind === 'antigrav' ? 'triggers' : 'traps', tg.f);
+        this.drawLine(c, t.pos[0] + 0.5, t.min[1] + 2, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
       }
-    }
+    });
     c.setLineDash([]);
     // selection / hover outlines
     for (const [s, style] of [[this.hoverObj, 'rgba(255,255,255,0.45)'], [this.sel, '#5df2b0']] as const) {
-      if (!s || !l[s.list][s.i]) continue;
-      const b = this.bbox(s.list, l[s.list][s.i]);
+      if (!s || !this.arr(s.list)[s.i]) continue;
+      const b = this.bbox(s.list, this.arr(s.list)[s.i]);
       for (const k of this.copies(b.x0, 30)) {
         const p = this.S(b.x0 + k, b.y1), q = this.S(b.x1 + k, b.y0);
         c.setLineDash(s === this.sel ? [5, 4] : []);
@@ -1343,6 +1827,45 @@ export class Editor {
         c.strokeRect(p.x - 3, p.y - 3, q.x - p.x + 6, q.y - p.y + 6);
       }
       c.setLineDash([]);
+    }
+  }
+
+  /** A line between two world points, taking the short way round the cylinder. */
+  private drawLine(c: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+    while (x1 - x0 > COLS / 2) x1 -= COLS;
+    while (x0 - x1 > COLS / 2) x1 += COLS;
+    for (const k of this.copies(Math.min(x0, x1), Math.abs(x1 - x0) + 20)) {
+      const p = this.S(x0 + k, y0), q = this.S(x1 + k, y1);
+      c.beginPath();
+      c.moveTo(p.x, p.y);
+      c.lineTo(q.x, q.y);
+      c.stroke();
+    }
+  }
+
+  /** A deathroller's track: dashed segments with a dot at every waypoint. */
+  private drawTrack(c: CanvasRenderingContext2D, t: TrapData, k: number) {
+    const pts = t.track ?? [];
+    const editing = this.pendingTrack !== null && this.level.traps[this.pendingTrack] === t;
+    c.strokeStyle = editing ? 'rgba(255,138,92,0.95)' : 'rgba(255,138,92,0.6)';
+    c.lineWidth = 2;
+    c.setLineDash([6, 4]);
+    c.beginPath();
+    const at = (p: number[]) => this.S(p[0] + k + 0.5, p[1] + 0.5);
+    pts.forEach((p, i) => {
+      const q = at(p);
+      if (i) c.lineTo(q.x, q.y);
+      else c.moveTo(q.x, q.y);
+    });
+    if (t.loop && pts.length > 2) c.closePath();
+    c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = '#ff8a5c';
+    for (const p of pts) {
+      const q = at(p);
+      c.beginPath();
+      c.arc(q.x, q.y, Math.max(2.5, this.view.ppu * 0.45), 0, Math.PI * 2);
+      c.fill();
     }
   }
 
@@ -1367,6 +1890,7 @@ export class Editor {
         id: e.id, x: 0, y: 0, dir: e.dir, g: 1, type: e.lemType, climber: false, floater: false,
         state: fatal ? 'splatting' : 'walking', t: fatal ? 0.3 : time, cyc: 0, fallen: 0, umbrella: false, bricks: 0, empty: 0,
         bomb: null, inside: new Set(), blockCells: [],
+        fuse: null, fast: 0, slow: 0, spin: 0, by: 0, tele: null, trampCells: [],
       };
       c.globalAlpha = 0.75;
       drawLemmo(c, ghost, b.x, b.y, this.view.ppu, { face: e.dir, hover: false, time });
@@ -1380,7 +1904,31 @@ export class Editor {
   }
 
   private drawCursor(c: CanvasRenderingContext2D) {
-    if (!this.mouse.inside || this.space || this.tool === 'pan') return;
+    if (!this.mouse.inside || this.space) return;
+    const mx = this.mouse.col, my = this.mouse.row;
+    if (this.pendingLink !== null) {
+      const t = this.level.triggers[this.pendingLink];
+      if (t) {
+        c.strokeStyle = 'rgba(255,200,87,0.9)';
+        c.lineWidth = 2;
+        c.setLineDash([6, 5]);
+        this.drawLine(c, t.pos[0] + 0.5, t.min[1] + 2, mx, my);
+        c.setLineDash([]);
+      }
+      return;
+    }
+    if (this.pendingTrack !== null) {
+      const last = this.level.traps[this.pendingTrack]?.track?.slice(-1)[0];
+      if (last) {
+        c.strokeStyle = 'rgba(255,138,92,0.8)';
+        c.lineWidth = 2;
+        c.setLineDash([3, 4]);
+        this.drawLine(c, last[0] + 0.5, last[1] + 0.5, Math.floor(mx) + 0.5, Math.floor(my) + 0.5);
+        c.setLineDash([]);
+      }
+      return;
+    }
+    if (this.tool === 'pan') return;
     const { ppu } = this.view;
     const x = Math.floor(this.mouse.col), y = Math.floor(this.mouse.row);
     const cellRect = (cx: number, cy: number) => {
@@ -1418,6 +1966,17 @@ export class Editor {
       if (this.tool === 'entrance') drawEntrance(c, p.x, p.y, ppu, 9, 7, 0, 1, t);
       else if (this.tool === 'exit') drawExit(c, p.x, p.y, ppu, t);
       else if (this.tool === 'trap') drawTrap(c, p.x, p.y, ppu, 5, t, false);
+      else if (this.tool === 'roller') drawTrap(c, p.x, this.S(0, gy - 1).y, ppu, 4, t, false, true, true);
+      else if (this.tool === 'switch') drawSwitch(c, p.x, p.y, ppu, 'kind1', -1, true, 3, t);
+      else if (this.tool === 'door') {
+        const q = this.S(x, gy + 8);
+        c.fillStyle = 'rgba(120,138,165,0.85)';
+        c.fillRect(q.x, q.y, 2 * ppu, 8 * ppu);
+      } else if (this.tool === 'pool') {
+        const q = this.S(x - 4, gy + 6);
+        c.fillStyle = 'rgba(56,140,255,0.6)';
+        c.fillRect(q.x, q.y, 8 * ppu, 6 * ppu);
+      }
       else if (this.tool === 'antigrav') drawAntigrav(c, p.x, p.y, ppu, 3, 3, t);
       else drawPortal(c, this.S(x, gy).x, p.y, ppu, t);
       c.globalAlpha = 1;
@@ -1443,7 +2002,9 @@ export class Editor {
       <div class="sub">Build a level, set how it's won, then prove it can be beaten.</div>
       <div class="ed-help-grid">
         <div><h4>1 · Shape the world</h4><p>Paint terrain with the <b>Brush</b>, <b>Box</b> and <b>Fill</b> tools. Pick materials on the right: steel can't be broken, hard earth can't be dug down through, one-way walls can only be bashed from one side, and water, lava and acid are deadly.</p></div>
-        <div><h4>2 · Add objects</h4><p>Every level needs at least one <b>hatch</b> and one <b>exit</b>. Traps, anti-gravity fields and teleporter pairs add extra challenge. Use <b>Select</b> to move objects or change their settings.</p></div>
+        <div><h4>2 · Add objects</h4><p>Every level needs at least one <b>hatch</b> and one <b>exit</b>. Traps, deathrollers, anti-gravity fields and teleporter pairs add extra challenge. Use <b>Select</b> to move objects or change their settings.</p></div>
+        <div><h4>Machines</h4><p>Place a <b>switch</b>, then click the <b>doors</b>, <b>pools</b>, traps or fields it controls. Each link has a plain choice, like "lever right: open / close". A <b>deathroller</b> follows the track you click out after placing it.</p></div>
+        <div><h4>On a touch screen</h4><p>One finger uses the tool and two fingers pan and pinch-zoom. Use the <b>Eraser</b>, or <b>Clear</b> in the Box and Fill options, instead of right-dragging.</p></div>
         <div><h4>3 · Set the win rules</h4><p>In <b>Win rules</b>, choose how many Lemmo's must be saved, the time limit and which skills the player gets. Fewer skills make a harder puzzle.</p></div>
         <div><h4>4 · Check and verify</h4><p><b>Check</b> lists problems and runs a dry test. Then <b>Test play</b> it: once you beat it, the level is <b>Verified</b>. Your levels appear under <b>User levels</b> in level select.</p></div>
       </div>
@@ -1454,19 +2015,16 @@ export class Editor {
         <div><span>Scroll · zoom</span><span>hold <kbd>Space</kbd> and drag, or middle mouse · wheel · <kbd>0</kbd> fits</span></div>
         <div><span>Undo · redo · save</span><span><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> · saves automatically</span></div>
         <div><span>Selected object</span><span>arrow keys nudge (<kbd>Shift</kbd> = 8) · <kbd>Delete</kbd> removes</span></div>
+        <div><span>Linking a switch · drawing a track</span><span><kbd>Enter</kbd> or <kbd>Esc</kbd> finishes</span></div>
         <div><span>Grid · test play</span><span><kbd>G</kbd> · <kbd>T</kbd></span></div>
       </div>
-      <p class="ed-note">Beta: the editor offers only what the game can run today. Skill pads, switches, moving traps and rising water from the original levels aren't available yet.</p>
+      <p class="ed-note">Share a level with the ${EICONS.share.replace('<svg', '<svg style="width:14px;height:14px;vertical-align:-2px"')} button: it copies a link with the whole level inside, so anyone can play it without an account or a file.</p>
       <div class="actions"><button class="btn primary">Got it</button></div>`);
     back.append(m);
     back.onclick = (e) => { if (e.target === back) back.remove(); };
     m.querySelector('button')!.onclick = () => back.remove();
     this.root.append(back);
   }
-}
-
-function toolOf(list: ListKey): Tool {
-  return (Object.keys(PLACE_LIST) as Tool[]).find((t) => PLACE_LIST[t] === list)!;
 }
 
 // ------------------------------------------------------------------ thumbnails & level lists
@@ -1521,9 +2079,44 @@ function download(u: U.UserLevel) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/** Make a share link for a level and copy it (or show it to copy by hand). */
+export async function shareDialog(parent: HTMLElement, u: U.UserLevel) {
+  let url: string;
+  try {
+    url = `${location.origin}${location.pathname}#share=${await U.shareCode(u)}`;
+  } catch {
+    const { m, close } = modal(parent, `<h3>Couldn't make a link</h3><div class="sub">This browser can't compress the level. Export it to a file instead.</div><div class="actions"><button class="btn primary">OK</button></div>`);
+    m.querySelector('button')!.onclick = close;
+    return;
+  }
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(url);
+    copied = true;
+  } catch { /* show it for manual copying */ }
+  const { m, close } = modal(parent, `
+    <h3>Share “${esc(u.title)}”</h3>
+    <div class="sub">${copied ? 'Link copied. Anyone who opens it can play your level and save a copy.' : 'Copy this link. Anyone who opens it can play your level and save a copy.'}</div>
+    <input class="ed-share" readonly>
+    <div class="hint">The whole level is inside the link (${Math.round(url.length / 100) / 10} KB), so nothing is uploaded anywhere.</div>
+    <div class="actions"><button class="btn" data-a="copy">${EICONS.copy} Copy</button><button class="btn primary" data-a="ok">Done</button></div>`);
+  const inp = m.querySelector('input')!;
+  inp.value = url;
+  inp.onfocus = () => inp.select();
+  m.querySelector<HTMLElement>('[data-a=copy]')!.onclick = async () => {
+    inp.select();
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      document.execCommand('copy');
+    }
+  };
+  m.querySelector<HTMLElement>('[data-a=ok]')!.onclick = close;
+}
+
 function levelMeta(u: U.UserLevel) {
   const l = u.level;
-  const skills = SKILLS.filter((s) => (l.skills[s] ?? 0) > 0);
+  const skills = ALL_SKILLS.filter((s) => (l.skills[s] ?? 0) > 0);
   return `<span>Save ${l.toSave}/${U.totalLemmos(l)}</span><span>⏱ ${fmtTime(l.timeLimit)}</span><span>${skills.length ? `${skills.length} skill${skills.length > 1 ? 's' : ''}` : 'No skills'}</span>`;
 }
 
@@ -1601,6 +2194,7 @@ export function editorHub(nav: EditorNav): HTMLElement {
           <button class="btn primary" data-a="edit">${EICONS.edit} Edit</button>
           <button class="btn" data-a="play">${ICONS.play} Play</button>
           <button class="btn icon" data-a="dup" title="Duplicate">${EICONS.copy}</button>
+          <button class="btn icon" data-a="share" title="Copy a share link">${EICONS.share}</button>
           <button class="btn icon" data-a="export" title="Export to a file">${EICONS.download}</button>
           <button class="btn icon" data-a="del" title="Delete">${EICONS.trash}</button>
         </div>`);
@@ -1612,6 +2206,7 @@ export function editorHub(nav: EditorNav): HTMLElement {
         render();
       });
       on('export', () => download(u));
+      on('share', () => shareDialog(s, u));
       on('del', () => {
         const { m, close } = modal(s, `<h3>Delete level?</h3><div class="sub">“${esc(u.title)}” will be gone for good. Export it first if you want to keep a copy.</div>
           <div class="actions"><button class="btn ghost" data-a="no">Cancel</button><button class="btn ed-danger" data-a="yes">${EICONS.trash} Delete</button></div>`);

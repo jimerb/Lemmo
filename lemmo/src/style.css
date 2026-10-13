@@ -299,3 +299,45 @@ canvas.swatch { width: 72px; height: 45px; border-radius: 8px; flex: none; image
   .steps, .mats { grid-template-columns: 1fr; }
   .gcontent { padding: 20px; }
 }
+
+/* ---------------------------------------------------------------- touch + small screens */
+button, .skill, .btn { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.screen.game { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.overlay { touch-action: none; }
+.dock { overscroll-behavior-x: contain; }
+.toast { max-width: calc(100vw - 32px); white-space: normal; text-align: center; }
+.skill.special svg { color: #ffc857; }
+@media (pointer: coarse) {
+  .skill .key, .hint kbd { display: none; }
+  .skill:hover { background: rgba(255, 255, 255, 0.04); }
+  .rr .btn { padding: 6px 14px; }
+}
+@media (max-width: 600px) {
+  .hud-top { top: 8px; left: 8px; right: 8px; gap: 6px; flex-wrap: wrap; }
+  .stats { order: 3; width: 100%; justify-content: center; margin: 0; }
+  .stat { min-width: 0; flex: 1; padding: 5px 8px; gap: 6px; }
+  .stat b { font-size: 16px; }
+  .stat span { font-size: 10px; }
+  .hud-buttons { margin-left: auto; gap: 4px; }
+  .btn.icon { width: 36px; height: 36px; padding: 7px; }
+  .dock { bottom: 8px; gap: 6px; padding: 11px 6px 6px; border-radius: 16px; max-width: calc(100vw - 16px); }
+  .rr { min-width: 58px; padding: 0 2px; }
+  .skill { width: 50px; padding: 6px 2px 4px; }
+  .skill svg { width: 24px; height: 24px; }
+  .skill .name { font-size: 10px; }
+  .minimap, .dock > .sep:last-of-type { display: none; }
+  .toast { top: 100px; }
+  .modal { padding: 20px 16px; }
+  .modal h3 { font-size: 22px; }
+}
+@media (max-height: 480px) {
+  .hud-top { top: 6px; }
+  .pill { padding: 5px 10px; }
+  .stat b { font-size: 16px; }
+  .dock { bottom: 6px; padding: 10px 5px 5px; gap: 5px; }
+  .skill { padding: 4px 2px 3px; }
+  .skill .name { display: none; }
+  .skill svg { width: 24px; height: 24px; }
+  .rr .lbl { display: none; }
+  .minimap { width: 150px; }
+}

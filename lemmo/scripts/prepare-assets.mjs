@@ -27,6 +27,8 @@ if (fs.existsSync(path.join(lvSrc, 'index.json'))) {
   const lvDst = path.join(out, 'levels');
   fs.mkdirSync(lvDst, { recursive: true });
   for (const f of fs.readdirSync(lvSrc)) {
+    // the bundled index carries Lemmo's own level titles; only create it if it is missing
+    if (f === 'index.json' && fs.existsSync(path.join(lvDst, f))) continue;
     const data = JSON.parse(fs.readFileSync(path.join(lvSrc, f), 'utf8'));
     if (data.cylinder) delete data.cylinder.lattice; // the remake builds its own cylinder
     fs.writeFileSync(path.join(lvDst, f), JSON.stringify(data));

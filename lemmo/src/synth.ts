@@ -174,6 +174,28 @@ const SFX: Record<string, (ctx: BaseAudioContext) => AudioBuffer> = {
       return s;
     });
   },
+  lever: (c) => render(c, 0.16, (t) => 0.5 * sq(t < 0.05 ? 180 * t : 260 * t, 0.4) * env(t, 0.001, 0.03)
+    + 0.3 * Math.sin(TAU * 1200 * t) * env(t, 0.001, 0.015)),
+  forcef: (c) => {
+    const o = osc(), lp = lowpass(900, c.sampleRate);
+    return render(c, 0.5, (t) => (0.35 * Math.sin(TAU * o(t, 70 + 40 * Math.sin(TAU * 9 * t))) + 0.25 * lp(noise())) * env(t, 0.02, 0.18));
+  },
+  speedpad: (c) => {
+    const o = osc();
+    return render(c, 0.3, (t) => 0.3 * sq(o(t, 400 + 2400 * t), 0.3) * env(t, 0.005, 0.12));
+  },
+  rumble: (c) => {
+    const lp = lowpass(180, c.sampleRate);
+    return render(c, 0.5, (t) => 0.8 * lp(noise()) * env(t, 0.08, 0.2));
+  },
+  rocket: (c) => {
+    const lp = lowpass(1400, c.sampleRate), o = osc();
+    return render(c, 0.9, (t) => (0.5 * lp(noise()) + 0.15 * Math.sin(TAU * o(t, 120 + 500 * t))) * env(t, 0.03, 0.4));
+  },
+  boing: (c) => {
+    const o = osc();
+    return render(c, 0.4, (t) => 0.45 * Math.sin(TAU * o(t, 180 + 260 * Math.exp(-t * 6) * (1 + 0.3 * Math.sin(TAU * 22 * t)))) * env(t, 0.004, 0.15));
+  },
 };
 
 export function synthSfx(ctx: BaseAudioContext, name: string): AudioBuffer | null {

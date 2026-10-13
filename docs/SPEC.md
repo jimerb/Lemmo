@@ -92,12 +92,12 @@ The file is a serialized object graph that mirrors `FUN_004432c1`:
 | 0x0040, 0x0100 | queried by unreferenced helpers [?] | `FUN_0042f3f4/f53d` |
 | 0x0080 | object footprint (entrance/exit/trap); not collidable | stamped by `FUN_0043119b`, ignored by ground tests |
 | 0x0200 | **water** surface/volume | fluid object stamps it |
-| 0x0400 | render/texture hint (mesh builder) [I] | `FUN_00461e0d` |
+| 0x0400 | marks cells of a closed sliding door (stamped as 0x403 with earth+metal) | `FUN_00427554` / `FUN_004275d4` |
 | 0x0800 | lemming-only barrier (rats/type 3 pass); turns walkers, stops carving | walker + bash |
 | 0x1000 | **trampoline cell**: landing here starts a Bounce | faller |
 | 0x2000 | **lava** | fluid stamps it |
 | 0x4000 | **acid** | fluid stamps it |
-| 0x8000 | spinner zone → cartwheel (unless already cartwheeling) | walker |
+| 0x8000 | **spinner pad**: a walker whose floor cell has it flips gravity (action 0x2b, "cartwheel" anim), but only while the anti-gravity trigger around it is enabled | walker `FUN_0041bffc`, list `0x4c8a48` |
 
 * **3D placement** [O]: the cylinder carries a lattice of 7 rings (one per 16 rows) × 32 angular
   segments (one per 8 columns). Each lattice point stores an inner and an outer vec3, and a world
@@ -131,7 +131,7 @@ the animation), ends the old one, and either replaces the primary action or appe
 | 5 | Basher | 0x1f | Bomb countdown (5 s) |
 | 6 | Miner | 0x20 | "Oh no" before exploding |
 | 7 | Digger | 0x21 | Bounce (trampoline) |
-| 0xb | Rocket [I] | 0x23 | Drown |
+| 0xb | Rocket | 0x23 | Drown |
 | 0xc | Cartwheel | 0x26 | Explode anim |
 | 0xd | Anti-gravity | 0x2a | Exiting (into balloon) |
 | 0xe | Trampoline (lemming becomes one) | 0x2b | Cartwheel via spinner zone |
@@ -156,7 +156,7 @@ the animation), ends the old one, and either replaces the primary action or appe
 ### 3.4 Walking (`FUN_0041bdd4` / `FUN_0041bffc`) [O]
 x advances by 5·dt·dir. Each time x crosses a column boundary, the step check runs on the
 column ahead (x', y = feet):
-1. A spinner zone (0x8000) ahead starts a Cartwheel, then a Fall.
+1. A spinner pad (0x8000) under the feet, inside an enabled anti-gravity trigger, flips gravity (0x2b), then Fall.
 2. In fluid: drown unless (water lemming in water) or (acid lemming in acid). Lava always kills.
 3. A barrier (0x800) at feet level turns the lemming around (ignored by type 3 / rats).
 4. Feet cell empty: if the ground below is also empty, look down 1, then 2 more; if still empty,
@@ -194,20 +194,94 @@ need the lemming on the ground, not falling/bouncing/flipping, and not climbing,
 being a trampoline. Dig is also refused on a water or acid surface. Panel slot 8 is the level's **special skill**
 (Rocket / Cartwheel / Anti-gravity / Trampoline / Slower / Faster). Slot 9 is Nuke.
 
-### 3.8 Level objects [O for data, I for some semantics]
-* **Entrance** ("lem box"): lemming count, release rate plus min/max, footprint.
-* **Exit** (hot-air balloon basket): footprint; lemmings entering go to state 0x2a.
-  Some exits have a capacity shown with the `_limit0-9` digit textures [I].
-* **Fluids**: water/lava/acid volumes, optionally moving between two levels (mode 1) [I].
-* **Triggers**: skill pads (kind 0), levers/switches (kind 1, value ±1), kind 2,
-  **anti-gravity zones** (kind 3), and rect-zone triggers (kind 4) [I for kinds 0/2/4].
-* **Teleporters** (two linked models, used in "The Lone Ranger") [I].
-* **Traps**: STAT (static, `attack`/`rest` anims) and DYNA (moving, e.g. deathroller); 3D models
-  `buzzsaw, tonweight, clawgrab, hammer, ghost, crab, venusf, robin, scorp, boot, icebreak,
-  demolball, mincer, deathroller`.
-* **Pre-placed lemmings**, including ones that start as blockers. Evil rats are type 3.
+### 3.8 Level objects and the command system [O unless marked]
+Every placed object has an id (u16) and an **enabled** flag (entity +0x38). The level update (`FUN_004423d2`) only updates triggers, doors and fluids whose flag is set (`FUN_0041cba0`).
 
-### 3.9 Win/lose [O for data, I for flow]
+**Commands** (`FUN_00433b2e`) are 4 ints `[target, op, a, b]`, stored in the level as the triggers'
+"rect" lists. `target >= 0` is looked up in the object table (`FUN_00444ba1`):
+op **4** calls vtable+4 ("on"), op **5** vtable+8 ("off"), op **0** vtable+0xc ("set", a, b).
+`target == -2` means the triggering lemming: `[-2, 6, 1]` gives it **Faster** (action 0x10,
+`FUN_00416730`) and `[-2, 6, 2]` gives **Slower** (0xf, `FUN_0041ac50`, or refreshes a running one).
+What on and off mean per object:
+
+| Object | on (op 4) | off (op 5) | set (op 0) |
+|---|---|---|---|
+| Trigger | enable | disable | – |
+| Door ("counter", list 0x1f60) | open | close | – |
+| Fluid | fill to `levelA` | drain to `levelB` | – |
+| STAT/DYNA trap | enable | disable, releasing caught lemmings | DYNA: path 0 / 1 / toggle (`FUN_00424583`) |
+| Prop (list 0x1f20) | show | hide | – |
+
+**Triggers** share a base update (`FUN_004339fc`): while the cooldown `f98` is over, call the idle hook
+(vtable+0x24). Then, if the detector (vtable+0x1c) finds a lemming and the cooldown is over, fire
+(vtable+0x20) and restart the cooldown. Detection tests the lemming position against the footprint
+(`FUN_00430ba1`).
+* **kind 0, button** (vtable `0x4b1148`): fires once (`state` 0→1) and runs `rects`.
+* **kind 1, lever** (`0x4b1288`): state ±1. In state −1 a lemming walking right (dir +1) flips it to +1
+  and runs `rects2`; in state +1 a lemming walking left flips it back and runs `rects`. Vtable slot 10
+  applies the starting `value` at level start. In 220 of 231 doors and 516 of 520 fluids that start state
+  agrees with the controlled object's own [I].
+* **kind 2, timed plate** (`0x4b12b4`): a lemming on it runs `rects` (state 1). When the 5 s cooldown runs
+  out the idle hook runs `rects2` (state 2).
+* **kind 3, anti-gravity** (`0x4b0d80`): only the visual/sound object. Its enabled flag gates the spinner pads.
+* **kind 4, speed pad** (`0x4b1178`): every lemming inside whose dir matches `bc` (0 = any) and whose
+  gravity matches the flag gets the single command (Faster in every shipped level).
+
+**Doors** (list 0x1f60, `FUN_00424187`, update `FUN_00423749`). The rect is `[x0, x1, yTop, yBottom]`
+(half-open), with `a0` as the start state (1 open, 2 closed). Moving between states slides a fade value
+at 3/s (`DAT_004bf6d0`). On reaching closed the cells get `|= 0x403`; on reaching open they get `&= ~0x403`.
+A lemming inside while it closes is flagged (+0x5d) and dies (action 0x25). Mode `b4` 1 or 2 makes it a
+**counting door**: lemmings entering the rect (mode 2 by walking, mode 1 by falling) increment `b0`,
+or decrement it when they move in direction `a8`. When `b0` reaches `ac` it closes, once that lemming
+is through. The remaining count is shown with the `_limit` digits.
+
+**Fluids** (list 0x1f70, `FUN_0042acac`, update `FUN_0042b24d`). Mode 0 starts full at `levelA`.
+Mode 1 starts drained at `levelB`, and its baked cells are cleared on load. Filling stamps the flag up to
+`min.y + level`; draining clears and re-stamps. Rates come from the per-type table built in
+`FUN_00428848`: water 2, lava 0.5, acid 1 rows/s. Type 0 stamps 0x200, type 1 stamps 0x2000. Acid is
+not re-stamped by the original [O]; the remake stamps 0x4000 too.
+
+**Teleporters** (list 0x1f90, `FUN_004347ec`, update `FUN_00434b0f`). `u98` is the **partner's object
+id**, `fa0` the travel delay (0.5 s or 3 s in shipped levels) and `v1b0` the exit point. Links needn't be
+symmetric (VH12 and VH18 have one-way and many-to-one links), and file order is often not the pairing
+(M18, H06).
+
+**Traps.** STAT (`0x4b11b0`, update `FUN_00432e3f`): while enabled, it catches lemmings inside the
+footprint (`b1d1`: all of them, otherwise one per attack). With an attack animation named, it ignores
+others until the animation ends [I: the remake uses 1.5 s]. `uc0` is the death action; `b1d3` makes it
+switch off after one kill.
+DYNA (`0x4b0f28`, update `FUN_0042478f`) is a STAT that moves along a **path** (level list after the
+background). A path is a polyline of keys `{len, n, p(x,y), v(x,y)}` with position `p + v·s` for
+`s ∈ [0, len]`. The trap advances `s` by `speed·dt` (`f1f8`), and `FUN_00451997` walks the keys:
+open paths ping-pong (flag +0x200), closed paths loop. Each tick it clears earth along its leading
+edge: `n` bit 1 means vertical, bit 0 positive, XOR the reverse flag. It reverses when that edge holds
+metal. The kill box is `pos + v208 .. pos + v218`. `path2` plus the paths' junction lists let `set`
+commands move it to the other track at a junction [I for the exact junction rule]. Which edge rows are
+cut is [I]: the remake skips the box's bottom row so rollers don't trench their own floor.
+
+**Pre-placed lemmings**, including ones that start as blockers. Evil rats are type 3.
+
+### 3.9 Special skills (panel slot 8, type in +0x2c, factory `FUN_0045afeb`) [O unless marked]
+* **Rocket** (0xb, `FUN_0041a520`): starts a type-1 countdown (`FUN_00413d40(5,1)`). On expiry
+  (`FUN_00414370`) it gets action 0xb flight (`FUN_0041a662`): y moves against gravity at **25 rows/s**
+  (`DAT_004b0c40`). Hitting a non-empty, non-footprint cell gives the explosion action (`FUN_004081b0` →
+  blast `FUN_0043f510`); leaving the world kills it.
+* **Cartwheel** (0xc, `FUN_0041cbc0` / update `FUN_0041cd24`): moves at walk speed × 2 (`DAT_004b0d48`),
+  clearing the 3 body rows ahead. Metal or the one-way bit for its direction stops it (`FUN_0042f8b9`).
+  It also clears the floor cell of each new column [O], which the remake doesn't copy [I]. A 5 s
+  type-2 countdown runs alongside.
+* **Trampoline** (0xe, `FUN_0041b630`): the lemming's column gets `0x882` (metal | footprint | barrier) on
+  4 rows, and the cell above the feet gets `0x1082` (adding the trampoline bit). A faller landing on 0x1000
+  starts **Bounce** (0x21, `FUN_0040eec4`): `h(t) = 35t − 12.5t²` at walk speed horizontally. The remake
+  widens the springy cell to 3 columns.
+* **Anti-gravity** (0xd, `FUN_0040bac0`): `FUN_0042f5e3` negates gravity.
+* **Slower** (0xf): speedMod 3 (walk and climb at half speed) plus a 5 s countdown. **Faster** (0x10):
+  speedMod 2, so the lemming update loop runs twice per tick (`FUN_0042e2bf`), for 5 s.
+* Assignment (`FUN_0045a0e0`): rocket and cartwheel need a lemming that isn't a trampoline, blocker or
+  climber. The trampoline excludes climbers. All of them need it on the ground and not falling,
+  bouncing or flipping.
+
+### 3.10 Win/lose [O for data, I for flow]
 The level ends when every lemming is out or dead, the timer runs out, or a nuke finishes.
 Success if saved ≥ `toSave`. UI strings: "You Totally Stormed That Level!", "You Failed To Rescue
 Enough Lemmings!". Holding the balloon speeds up time; double-click nukes.
@@ -215,10 +289,9 @@ Enough Lemmings!". Holding the balloon speeds up time; double-click nukes.
 ---
 
 ## 4. Open questions / next probes
-* Exact semantics of trigger kinds 0, 2 and 4, and of counter objects (list 0x1f60). Read their
-  virtual `Update`/`OnLemming` methods (vtables `0x4b1148`, `0x4b12b4`, `0x4b1178`, `0x4b0f00`).
-* Rocket / Faster / Slower / Anti-gravity action details (ctors `0x41a520`, `0x416730`, `0x41ac50`, `0x40bac0`).
+* ~~Trigger kinds 0/2/4, counter objects, rocket/faster/slower/anti-gravity~~: resolved, see §3.8 and §3.9.
+* Trap attack-animation lengths (they gate STAT traps) live in the model files and aren't parsed yet.
 * How the bomb blast affects nearby lemmings, and whether blockers release.
-* The 0x40, 0x100 and 0x400 cell bits.
+* The 0x40 and 0x100 cell bits.
 * Runtime confirmation: none of this was observed running. It's all static analysis. The
   game could be run under Wine to validate timings.

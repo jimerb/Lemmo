@@ -1,4 +1,4 @@
-// Lemmo simulation — a re-implementation of the Lemmings Revolution rules recovered from the
+// Lemmo simulation — a re-implementation of the original game rules recovered from the
 // original executable (docs/SPEC.md). Units: x = column (0..256, wraps), y = feet row (row 0 = bottom),
 // time in seconds.
 import { decodeCells, type Footprint, type LevelData } from './level.ts';
@@ -24,7 +24,7 @@ export const BRICKS = 12;
 export const CYCLE = 1;           // one 100-step skill cycle == one animation loop (1 s)
 export const HEAD = 2;            // rows above the feet that make up the body
 
-// COMPILED\RELEASERATE.PC: seconds between lemmings for release rate 1..99.
+// COMPILED\RELEASERATE.PC: seconds between Lemmo's for release rate 1..99.
 export const RELEASE_INTERVAL = [5.0, 4.515, 4.314, 4.16, 4.03, 3.916, 3.812, 3.717, 3.629, 3.545, 3.467,
   3.392, 3.32, 3.252, 3.186, 3.122, 3.061, 3.001, 2.943, 2.886, 2.832, 2.778, 2.726, 2.675, 2.625, 2.576,
   2.528, 2.481, 2.434, 2.389, 2.344, 2.3, 2.257, 2.215, 2.173, 2.131, 2.091, 2.051, 2.011, 1.972, 1.933,
@@ -44,13 +44,13 @@ export type State =
 const DYING: State[] = ['ohno', 'drowning', 'burning', 'splatting', 'exiting', 'trapped', 'dead', 'saved'];
 const GROUND_SKILL_STATES: State[] = ['walking', 'building', 'bashing', 'mining', 'digging', 'shrugging'];
 
-export interface Lemming {
+export interface Lemmo {
   id: number;
   x: number;
   y: number;
   dir: number;      // +1 = increasing column
   g: number;        // gravity sign (+1 normal, -1 after anti-gravity)
-  type: number;     // 0 normal, 1 water lemming, 2 acid lemming, 3 evil rat
+  type: number;     // 0 normal, 1 water Lemmo, 2 acid Lemmo, 3 evil rat
   climber: boolean;
   floater: boolean;
   state: State;
@@ -85,7 +85,7 @@ export class Sim {
   readonly cells: Uint32Array;
   private block: Uint8Array;
   readonly changed = new Set<number>();
-  readonly lemmings: Lemming[] = [];
+  readonly lemmos: Lemmo[] = [];
   readonly events: SimEvent[] = [];
   readonly entrances: Entrance[];
   readonly skills: Record<string, number>;
@@ -110,11 +110,11 @@ export class Sim {
     this.timeLeft = level.timeLimit;
     this.skills = { ...level.skills };
     this.entrances = level.entrances.map((e) => ({
-      x: e.spawn[0], y: e.spawn[1], dir: e.dir || 1, type: e.lemType, left: e.lemmings,
+      x: e.spawn[0], y: e.spawn[1], dir: e.dir || 1, type: e.lemType, left: e.lemmos,
       rate: e.releaseRate, min: e.releaseRateMin, max: e.releaseRateMax, timer: 0,
     }));
-    this.total = level.entrances.reduce((s, e) => s + e.lemmings, 0);
-    for (const p of level.preplacedLemmings) {
+    this.total = level.entrances.reduce((s, e) => s + e.lemmos, 0);
+    for (const p of level.preplacedLemmos) {
       const l = this.spawn(p.pos[0], p.pos[1], p.dir || 1, p.type);
       l.g = p.gravity || 1;
       l.climber = p.climber;
@@ -148,20 +148,20 @@ export class Sim {
     return (v & F.EARTH) !== 0 || (v & FLUID) !== 0;
   }
 
-  // ------------------------------------------------------------------ lemmings
-  col(l: Lemming) {
+  // ------------------------------------------------------------------ lemmos
+  col(l: Lemmo) {
     return wrap(l.dir > 0 ? Math.floor(l.x) : Math.ceil(l.x) - 1);
   }
-  private spawn(x: number, y: number, dir: number, type: number): Lemming {
-    const l: Lemming = {
+  private spawn(x: number, y: number, dir: number, type: number): Lemmo {
+    const l: Lemmo = {
       id: this.nextId++, x, y: Math.round(y), dir, g: 1, type, climber: false, floater: false,
       state: 'falling', t: 0, cyc: 0, fallen: 0, umbrella: false, bricks: 0, empty: 0, bomb: null,
       inside: new Set(), blockCells: [],
     };
-    this.lemmings.push(l);
+    this.lemmos.push(l);
     return l;
   }
-  private setState(l: Lemming, s: State) {
+  private setState(l: Lemmo, s: State) {
     if (l.state === 'blocking' && s !== 'blocking') this.unblock(l);
     l.state = s;
     l.t = 0;
@@ -175,10 +175,10 @@ export class Sim {
       l.x = this.col(l) + 0.5;
     }
   }
-  private turn(l: Lemming) {
+  private turn(l: Lemmo) {
     l.dir = -l.dir;
   }
-  private stampBlock(l: Lemming) {
+  private stampBlock(l: Lemmo) {
     const c = Math.floor(l.x);
     for (let dx = -1; dx <= 1; dx++)
       for (let k = 0; k <= HEAD; k++) {
@@ -189,19 +189,19 @@ export class Sim {
         }
       }
   }
-  private unblock(l: Lemming) {
+  private unblock(l: Lemmo) {
     for (const i of l.blockCells) this.block[i] = 0;
     l.blockCells = [];
   }
   get active() {
-    return this.lemmings.filter((l) => l.type !== 3 && l.state !== 'dead' && l.state !== 'saved');
+    return this.lemmos.filter((l) => l.type !== 3 && l.state !== 'dead' && l.state !== 'saved');
   }
   get remainingToRelease() {
     return this.entrances.reduce((s, e) => s + e.left, 0);
   }
 
   // ------------------------------------------------------------------ player actions
-  canAssign(l: Lemming, skill: Skill): boolean {
+  canAssign(l: Lemmo, skill: Skill): boolean {
     if (l.type === 3 || DYING.includes(l.state) || (this.skills[skill] ?? 0) <= 0) return false;
     switch (skill) {
       case 'climber': return !l.climber;
@@ -217,7 +217,7 @@ export class Sim {
       }
     }
   }
-  assign(l: Lemming, skill: Skill): boolean {
+  assign(l: Lemmo, skill: Skill): boolean {
     if (!this.canAssign(l, skill)) return false;
     this.skills[skill]--;
     switch (skill) {
@@ -252,10 +252,10 @@ export class Sim {
     this.timeLeft = Math.max(0, this.timeLeft - dt);
     this.release(dt);
     for (const [k, v] of this.trapCooldown) this.trapCooldown.set(k, v - dt);
-    for (const l of this.lemmings) this.update(l, dt);
-    for (let i = this.lemmings.length - 1; i >= 0; i--) {
-      const s = this.lemmings[i].state;
-      if (s === 'dead' || s === 'saved') this.lemmings.splice(i, 1);
+    for (const l of this.lemmos) this.update(l, dt);
+    for (let i = this.lemmos.length - 1; i >= 0; i--) {
+      const s = this.lemmos[i].state;
+      if (s === 'dead' || s === 'saved') this.lemmos.splice(i, 1);
     }
     const alive = this.active.length;
     if ((alive === 0 && this.remainingToRelease === 0) || this.timeLeft <= 0) this.finished = true;
@@ -278,7 +278,7 @@ export class Sim {
     }
   }
 
-  private update(l: Lemming, dt: number) {
+  private update(l: Lemmo, dt: number) {
     l.t += dt;
     if (l.bomb !== null && !DYING.includes(l.state)) {
       l.bomb -= dt;
@@ -316,14 +316,14 @@ export class Sim {
     if (!DYING.includes(l.state)) this.environment(l);
   }
 
-  private kill(l: Lemming) {
+  private kill(l: Lemmo) {
     l.state = 'dead';
     this.unblock(l);
     if (l.type !== 3) this.died++;
   }
 
   // ---- walking (FUN_0041bdd4 / FUN_0041bffc)
-  private walk(l: Lemming, dt: number) {
+  private walk(l: Lemmo, dt: number) {
     let rem = dt;
     while (rem > 1e-9 && l.state === 'walking') {
       const target = nextInt(l.x, l.dir);
@@ -341,7 +341,7 @@ export class Sim {
     l.x = wrap(l.x);
   }
 
-  private stepCheck(l: Lemming) {
+  private stepCheck(l: Lemmo) {
     const X = Math.round(l.x);
     const c = l.dir > 0 ? X : X - 1;
     const { y, g } = l;
@@ -371,7 +371,7 @@ export class Sim {
   }
 
   // ---- falling (FUN_004160bd, landing FUN_00416433)
-  private fall(l: Lemming, dt: number) {
+  private fall(l: Lemmo, dt: number) {
     let rem = dt;
     while (l.state === 'falling') {
       const c = this.col(l);
@@ -399,7 +399,7 @@ export class Sim {
     }
   }
 
-  private land(l: Lemming, below: number) {
+  private land(l: Lemmo, below: number) {
     const safeFluid = (l.type === 1 && below & F.WATER) || (l.type === 2 && below & F.ACID);
     if (l.fallen > SPLAT_ROWS && !l.floater && !safeFluid) {
       this.setState(l, 'splatting');
@@ -411,7 +411,7 @@ export class Sim {
   }
 
   // ---- climbing (FUN_004137ca / FUN_004139bf)
-  private climb(l: Lemming, dt: number) {
+  private climb(l: Lemmo, dt: number) {
     let rem = dt;
     const X = Math.round(l.x);
     const wall = l.dir > 0 ? X : X - 1;
@@ -441,7 +441,7 @@ export class Sim {
   }
 
   // ---- builder (FUN_0040f8d1: brick at step 81, climb at step 90)
-  private build(l: Lemming, dt: number) {
+  private build(l: Lemmo, dt: number) {
     const prev = l.cyc;
     l.cyc += dt;
     const c = this.col(l);
@@ -472,7 +472,7 @@ export class Sim {
   }
 
   // ---- basher (FUN_0040bba0: 4-row tunnel, one column per cycle)
-  private bash(l: Lemming, dt: number) {
+  private bash(l: Lemmo, dt: number) {
     const prev = l.cyc;
     l.cyc += dt;
     const c = Math.floor(l.x);
@@ -509,7 +509,7 @@ export class Sim {
   }
 
   // ---- miner (FUN_00418470: carve rows -1..3 ahead, then step diagonally down)
-  private mine(l: Lemming, dt: number) {
+  private mine(l: Lemmo, dt: number) {
     const prev = l.cyc;
     l.cyc += dt;
     const c = Math.floor(l.x);
@@ -540,7 +540,7 @@ export class Sim {
   }
 
   // ---- digger (FUN_00415850: 3 cells wide, one row per cycle)
-  private dig(l: Lemming, dt: number) {
+  private dig(l: Lemmo, dt: number) {
     const prev = l.cyc;
     l.cyc += dt;
     if (prev < 0.25 && l.cyc >= 0.25) {
@@ -569,7 +569,7 @@ export class Sim {
   }
 
   // ---- bomber explosion (FUN_0043f510, 7x7 disc, spares metal / water / barriers)
-  private explode(l: Lemming) {
+  private explode(l: Lemmo) {
     const c = Math.floor(l.x);
     for (let r = 0; r < 7; r++)
       for (let q = 0; q < 7; q++) {
@@ -585,13 +585,13 @@ export class Sim {
   }
 
   // ---- interactions with fluids, exits, traps, triggers, rats
-  private inBox(l: Lemming, f: Footprint, pad = 0) {
+  private inBox(l: Lemmo, f: Footprint, pad = 0) {
     const w = f.max[0] - f.min[0] + 2 * pad;
     const dx = wrap(l.x - (f.min[0] - pad));
     return dx <= w + 1 && l.y >= f.min[1] - pad - 1 && l.y <= f.max[1] + pad;
   }
 
-  private environment(l: Lemming) {
+  private environment(l: Lemmo) {
     const c = this.col(l);
     const here = this.terrain(c, l.y);
     const below = this.terrain(c, l.y - l.g);
@@ -612,7 +612,7 @@ export class Sim {
       }
     }
     if (l.type === 3) {
-      for (const o of this.lemmings) {
+      for (const o of this.lemmos) {
         if (o.type === 3 || DYING.includes(o.state)) continue;
         const dx = Math.abs(wrap(o.x - l.x + 128) - 128);
         if (dx < 1.3 && Math.abs(o.y - l.y) < 3) {

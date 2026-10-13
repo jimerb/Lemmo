@@ -52,7 +52,7 @@ async function show(file) {
     g.strokeRect(x0 * S, (rows - y1) * S, (x1 - x0 + 1) * S, (y1 - y0 + 1) * S);
     g.fillStyle = col; g.fillText(label, o.pos[0] * S + 4, (rows - o.pos[1]) * S - 4);
   };
-  L.entrances.forEach(e => box(e, '#0f0', `IN ${e.lemmings} @rr${e.releaseRate}`));
+  L.entrances.forEach(e => box(e, '#0f0', `IN ${e.lemmos} @rr${e.releaseRate}`));
   L.exits.forEach(e => box(e, '#ff0', 'EXIT'));
   L.triggers.forEach(t => box(t, '#0ff', t.kind));
   L.traps.forEach(t => box(t, '#f44', t.anim || t.cls));

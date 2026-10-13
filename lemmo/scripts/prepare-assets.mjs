@@ -1,4 +1,4 @@
-// Copies extracted Lemmings Revolution data into public/ in the shape the game expects.
+// Copies extracted original-game data into public/ in the shape the game expects.
 // Level JSON comes from ../tools/export_levels.py; sounds/music are the original WAVs.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,12 +36,12 @@ if (fs.existsSync(path.join(lvSrc, 'index.json'))) {
 const sndSrc = path.join(repo, 'extracted/box/SOUNDS');
 const musSrc = path.join(repo, 'extracted/box/MUSIC');
 if (fs.existsSync(sndSrc)) sounds = copyDir(sndSrc, path.join(out, 'sounds'), (f) => f.endsWith('.WAV'));
-if (fs.existsSync(musSrc)) music = copyDir(musSrc, path.join(out, 'music'), (f) => f.endsWith('.WAV'));
+if (fs.existsSync(musSrc)) music = copyDir(musSrc, path.join(out, 'music'), (f) => f.endsWith('.WAV'), (n) => n.toLowerCase().replace('lemming', 'track'));
 if (!levels && !sounds && !music) {
   console.log(`Nothing to do: no extracted game data found.
 The bundled levels in public/levels are already playable. To use the original audio, extract it
 from your own CD first (from the repository root):
-  python3 tools/lembox.py extract /path/to/cd/LEMMINGS.BOX extracted/box
+  python3 tools/lembox.py extract /path/to/cd/<archive> extracted/box
 then run "npm run assets" again.`);
   process.exit(0);
 }

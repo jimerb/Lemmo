@@ -87,7 +87,7 @@ def export(path):
             'lattice': [[[xyz(p[:3]), xyz(p[3:])] for p in ring] for ring in c['profile_pairs']],
             'innerTexture': c['inner_texture'], 'outerTexture': c['outer_texture'],
         },
-        'entrances': [dict(placed(e), lemmings=e['lemmings'], releaseRate=e['a0'],
+        'entrances': [dict(placed(e), lemmos=e['lemmings'], releaseRate=e['a0'],
                            releaseRateMin=e['a4'], releaseRateMax=e['a8'], index=e['index'],
                            spawn=[e['u9a'], e['u9c']],
                            dir=-1 if e['ub4'] == 0xffff else 1, lemType=entrance_type(e))
@@ -103,7 +103,7 @@ def export(path):
         'teleporters': [dict(placed(o), sound1=o['sound1'], sound2=o['sound2']) for o in L['list1f90']],
         'counters': [{'pos': xyz(o['pos']), 'id': o['id'], 'values': o['v40'],
                       'limit': o['b4']} for o in L['list1f60']],
-        'preplacedLemmings': [{'pos': xyz(l['pos']), 'dir': l['dir'], 'gravity': l['gravity'],
+        'preplacedLemmos': [{'pos': xyz(l['pos']), 'dir': l['dir'], 'gravity': l['gravity'],
                                'climber': l['climber'], 'floater': l['floater'], 'type': l['type'],
                                'blocking': l.get('starts_blocking', False)}
                               for l in L['lemmings'] + L['lemmings2']],

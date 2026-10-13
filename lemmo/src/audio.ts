@@ -1,5 +1,5 @@
 // Sound for Lemmo. Effects and music run on separate gain channels with their own volume and mute.
-// By default everything is synthesized in code (src/synth.ts). If original Lemmings Revolution WAVs
+// By default everything is synthesized in code (src/synth.ts). If original game WAVs
 // have been placed in public/sounds and public/music (see README), those are used instead.
 import { GenerativeMusic, synthSfx } from './synth.ts';
 
@@ -123,7 +123,7 @@ export class Audio {
     if (!this.ctx) return; // will start once unlock() runs
     if (this.originalMusic === null) {
       try {
-        const r = await fetch('music/lemming01.wav', { method: 'HEAD' });
+        const r = await fetch('music/track01.wav', { method: 'HEAD' });
         this.originalMusic = r.ok && (r.headers.get('content-type') ?? '').includes('audio');
       } catch {
         this.originalMusic = false;
@@ -132,7 +132,7 @@ export class Audio {
     if (this.wantMusic !== seed) return; // superseded while checking
     if (this.originalMusic) {
       const n = 1 + (seed % 13);
-      this.track = new window.Audio(`music/lemming${String(n).padStart(2, '0')}.wav`);
+      this.track = new window.Audio(`music/track${String(n).padStart(2, '0')}.wav`);
       this.track.loop = true;
       this.track.volume = this.musicVolume;
       this.track.play().catch(() => {});

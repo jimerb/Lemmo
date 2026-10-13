@@ -1,12 +1,12 @@
 // The in-level screen: owns the simulation, the 3D view, the overlay and the HUD.
 import { Audio } from './audio.ts';
-import { burst, drawAntigrav, drawEntrance, drawExit, drawLemming, drawPortal, drawTrap, stepParticles, type Particle } from './art.ts';
+import { burst, drawAntigrav, drawEntrance, drawExit, drawLemmo, drawPortal, drawTrap, stepParticles, type Particle } from './art.ts';
 import { ICONS } from './icons.ts';
 import { openGuide } from './guide.ts';
 import { TIERS, tierOf, type Footprint, type LevelData, type LevelIndexEntry } from './level.ts';
 import { CylinderView, RADIUS } from './render3d.ts';
 import { FlatView } from './flatview.ts';
-import { F, SKILLS, Sim, type Lemming, type Skill } from './sim.ts';
+import { F, SKILLS, Sim, type Lemmo, type Skill } from './sim.ts';
 import { TerrainPainter, themeFor } from './terrain.ts';
 
 const STEP = 1 / 60;
@@ -46,7 +46,7 @@ export class Game {
   private octx: CanvasRenderingContext2D;
   private particles: Particle[] = [];
   private selected: Skill = 'climber';
-  private hover: Lemming | null = null;
+  private hover: Lemmo | null = null;
   private mouse = { x: -1, y: -1, down: false, sx: 0, sy: 0, dragging: false, lastX: 0, lastY: 0 };
   private keys = new Set<string>();
   private speed = 1;
@@ -209,7 +209,7 @@ export class Game {
       dock.append(b);
     });
     const nuke = el('button', 'skill nuke', `<span class="key">N</span>${ICONS.nuke}<span class="name">Nuke</span>`);
-    nuke.title = 'Double-click to nuke every lemming';
+    nuke.title = 'Double-click to nuke every Lemmo';
     nuke.onclick = () => this.armNuke();
     this.ui.nuke = nuke;
     dock.append(nuke, el('div', 'sep'), this.mini);
@@ -323,7 +323,7 @@ export class Game {
     } else {
       this.nukeArmedAt = this.clock;
       this.ui.nuke.classList.add('armed');
-      this.toast('Click Nuke again to blow up every lemming');
+      this.toast('Click Nuke again to blow up every Lemmo');
       setTimeout(() => this.ui.nuke.classList.remove('armed'), 700);
     }
   }
@@ -362,12 +362,12 @@ export class Game {
       <div class="sub">${TIERS[tierOf(this.entry.slot)]} · Level ${this.entry.slot + 1}</div>
       <h3>${this.entry.title}</h3>
       <div class="facts">
-        <div class="fact"><b>${this.sim.total}</b><span>Lemmings</span></div>
+        <div class="fact"><b>${this.sim.total}</b><span>Lemmo's</span></div>
         <div class="fact"><b>${this.level.toSave}</b><span>To save</span></div>
         <div class="fact"><b>${fmtTime(this.level.timeLimit)}</b><span>Time</span></div>
       </div>
       <div class="skill-chips">${this.skillChips()}</div>
-      <div class="hint"><kbd>1</kbd>–<kbd>8</kbd> pick a skill · click a lemming to assign · the world wraps around at the edges · <kbd>V</kbd> toggles the spinning cylinder view · new here? press <kbd>I</kbd> or ⓘ for the guide</div>
+      <div class="hint"><kbd>1</kbd>–<kbd>8</kbd> pick a skill · click a Lemmo to assign · the world wraps around at the edges · <kbd>V</kbd> toggles the spinning cylinder view · new here? press <kbd>I</kbd> or ⓘ for the guide</div>
       <div class="actions"><button class="btn ghost" data-a="back">Levels</button><button class="btn primary" data-a="go">Let's go!</button></div>`);
     m.querySelector<HTMLElement>('[data-a=back]')!.onclick = () => this.host.onExit();
     this.closeBriefing = close;
@@ -418,7 +418,7 @@ export class Game {
     this.host.audio.play(ok ? 'fanfarestart' : 'die');
     const next = this.host.nextOf(this.entry);
     const { m } = this.modal(`
-      <div class="sub">${ok ? (this.sim.saved === this.sim.total ? 'You totally stormed that level!' : 'Well done!') : 'You failed to rescue enough lemmings'}</div>
+      <div class="sub">${ok ? (this.sim.saved === this.sim.total ? 'You totally stormed that level!' : 'Well done!') : 'You failed to rescue enough Lemmo’s'}</div>
       <h3>${this.entry.title}</h3>
       <div class="big ${ok ? 'good' : 'bad'}">${pct}%</div>
       <div class="facts">
@@ -580,7 +580,7 @@ export class Game {
     };
     this.level.entrances.forEach((e) => dot(e, '#5eead4'));
     this.level.exits.forEach((e) => dot(e, '#ffc857'));
-    for (const l of this.sim.lemmings) {
+    for (const l of this.sim.lemmos) {
       m.fillStyle = l.type === 3 ? '#ff4d6d' : '#ffffff';
       m.fillRect(Math.floor(l.x) * 2 - 1, (rows - l.y - 2) * 2, 3, 4);
     }
@@ -686,9 +686,9 @@ export class Game {
       if (p.facing > 0.12) drawExit(c, p.x, p.y, p.scale, time);
     }
 
-    // lemmings (far ones first)
-    const vis: { l: Lemming; p: ReturnType<typeof P> }[] = [];
-    for (const l of this.sim.lemmings) {
+    // Lemmo's (far ones first)
+    const vis: { l: Lemmo; p: ReturnType<typeof P> }[] = [];
+    for (const l of this.sim.lemmos) {
       let x = l.x, y = l.y;
       if (l.state === 'bashing') x += l.dir * clamp((l.cyc - 0.15) / 0.85, 0, 1);
       if (l.state === 'mining' && l.cyc < 0.68) {
@@ -719,7 +719,7 @@ export class Game {
       }
     }
     const lemScale = this.mode === 'flat' ? 1.35 : 1;
-    for (const { l, p } of vis) drawLemming(c, l, p.x, p.y, p.scale * lemScale, { face: l.dir, hover: l === this.hover, time });
+    for (const { l, p } of vis) drawLemmo(c, l, p.x, p.y, p.scale * lemScale, { face: l.dir, hover: l === this.hover, time });
 
     // particles
     for (const pt of this.particles) {

@@ -47,7 +47,7 @@ function osc() {
   };
 }
 
-/** A sung note with vibrato and a vowel-ish timbre (used for the lemming "voices"). */
+/** A sung note with vibrato and a vowel-ish timbre (used for the Lemmo "voices"). */
 function voice(t: number, ph: number) {
   const vib = 1 + 0.02 * Math.sin(TAU * 6 * t);
   const p = ph * vib;

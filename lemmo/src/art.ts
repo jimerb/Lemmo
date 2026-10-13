@@ -1,5 +1,5 @@
-// Vector art for Lemmo: lemmings in every state, level objects and particles, drawn on a 2D overlay.
-import type { Lemming } from './sim.ts';
+// Vector art for Lemmo: Lemmo's in every state, level objects and particles, drawn on a 2D overlay.
+import type { Lemmo } from './sim.ts';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -22,10 +22,10 @@ function limb(c: Ctx, x1: number, y1: number, x2: number, y2: number, w: number,
 }
 
 /**
- * Draw a lemming with feet at (0,0) in a local frame where 1 unit = 1 grid cell,
+ * Draw a Lemmo with feet at (0,0) in a local frame where 1 unit = 1 grid cell,
  * y up is negative screen y. `face` is +1 (right) or -1 (left).
  */
-function body(c: Ctx, l: Lemming, t: number, face: number, s: number) {
+function body(c: Ctx, l: Lemmo, t: number, face: number, s: number) {
   const pal = PALETTE[l.type] ?? PALETTE[0];
   const lw = Math.max(0.16, 1.4 / s);
   let bob = 0, legA = 0, armA = 0.3, armB = -0.3, lean = 0, armUp = false, crouch = 0;
@@ -220,8 +220,8 @@ export interface DrawOpts {
   time: number;
 }
 
-/** Draw lemming `l` at screen (sx, sy) where `s` = pixels per grid unit. */
-export function drawLemming(c: Ctx, l: Lemming, sx: number, sy: number, s: number, o: DrawOpts) {
+/** Draw Lemmo `l` at screen (sx, sy) where `s` = pixels per grid unit. */
+export function drawLemmo(c: Ctx, l: Lemmo, sx: number, sy: number, s: number, o: DrawOpts) {
   const t = l.t + l.id * 0.37;
   c.save();
   c.translate(sx, sy);

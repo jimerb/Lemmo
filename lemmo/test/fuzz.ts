@@ -9,13 +9,13 @@ for (const f of fs.readdirSync('public/levels').filter((f) => f !== 'index.json'
   const sim = new Sim(lv);
   try {
     for (let i = 0; i < 60 * 240 && !sim.finished; i++) {
-      if (i % 30 === 0 && sim.lemmings.length) {
-        const l = sim.lemmings[Math.floor(rnd() * sim.lemmings.length)];
+      if (i % 30 === 0 && sim.lemmos.length) {
+        const l = sim.lemmos[Math.floor(rnd() * sim.lemmos.length)];
         sim.assign(l, SKILLS[Math.floor(rnd() * SKILLS.length)]);
       }
       if (i === 60 * 200) sim.nuke();
       sim.step(1 / 60);
-      for (const l of sim.lemmings) if (!Number.isFinite(l.x) || !Number.isFinite(l.y)) throw new Error(`NaN lemming ${l.state}`);
+      for (const l of sim.lemmos) if (!Number.isFinite(l.x) || !Number.isFinite(l.y)) throw new Error(`NaN lemmo ${l.state}`);
     }
   } catch (e) {
     fails++;

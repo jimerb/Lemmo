@@ -10,7 +10,7 @@ export interface Footprint {
 }
 
 export interface EntranceData extends Footprint {
-  lemmings: number;
+  lemmos: number;
   releaseRate: number;
   releaseRateMin: number;
   releaseRateMax: number;
@@ -46,7 +46,7 @@ export interface LevelData {
   triggers: TriggerData[];
   traps: TrapData[];
   teleporters: Footprint[];
-  preplacedLemmings: { pos: Vec3; dir: number; gravity: number; climber: boolean; floater: boolean; type: number; blocking: boolean }[];
+  preplacedLemmos: { pos: Vec3; dir: number; gravity: number; climber: boolean; floater: boolean; type: number; blocking: boolean }[];
 }
 
 export interface LevelIndexEntry {
@@ -84,3 +84,4 @@ export function decodeCells(level: LevelData): Uint32Array {
   }
   return out;
 }
+

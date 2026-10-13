@@ -41,7 +41,7 @@ function menu() {
     <div class="floaters">${Array.from({ length: 14 }, (_, i) =>
       `<span style="left:${(i * 7.3) % 100}%;animation-duration:${9 + (i % 5) * 3}s;animation-delay:${-i * 1.7}s">${i % 3 ? '☂️' : '🟢'}</span>`).join('')}</div>
     <div class="logo">Lemmo</div>
-    <div class="tagline">Save the lemmings. Spin the world.</div>
+    <div class="tagline">Save the Lemmo's. Spin the world.</div>
     <div class="menu-actions">
       <button class="btn primary" data-a="play">Play</button>
       ${done ? `<button class="btn" data-a="continue">Continue · ${done}/${index.length}</button>` : ''}

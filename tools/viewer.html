@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>LR Level Viewer</title>
+<style>
+  body { background: #111; color: #ddd; font: 13px system-ui, sans-serif; margin: 16px; }
+  canvas { image-rendering: pixelated; border: 1px solid #333; width: 100%; max-width: 1536px; }
+  select { font: inherit; }
+  .legend span { display: inline-block; margin-right: 12px; }
+  .sw { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<p>Unrolled cylinder (256 columns, row 0 at the bottom). Serve the project root with
+<code>python3 -m http.server</code> and open <code>/tools/viewer.html</code>.</p>
+<select id="pick"></select> <span id="info"></span>
+<div class="legend" id="legend"></div>
+<canvas id="c" width="1536" height="576"></canvas>
+<script>
+const COLORS = [
+  [0x8000, '#c0f'], [0x4000, '#7f0'], [0x2000, '#f50'], [0x1000, '#ff0'], [0x200, '#38f'],
+  [0x800, '#f0f'], [0x80, '#444'], [0x2, '#8a9aa8'], [0x4, '#a86'], [0x8, '#a68'],
+  [0x10, '#864'], [0x20, '#864'], [0x1, '#7a5230'],
+];
+const NAMES = {0x1:'earth',0x2:'metal',0x4:'1-way R',0x8:'1-way L',0x10:'no-dig',0x80:'object',
+  0x200:'water',0x800:'barrier',0x1000:'trampoline',0x2000:'lava',0x4000:'acid',0x8000:'spinner'};
+document.getElementById('legend').innerHTML = COLORS.filter(([b]) => NAMES[b])
+  .map(([b, c]) => `<span><i class="sw" style="background:${c}"></i>${NAMES[b]}</span>`).join('');
+
+function color(v) {
+  if (!v) return null;
+  for (const [bit, c] of COLORS) if (v & bit) return c;
+  return '#f00';
+}
+
+async function show(file) {
+  const L = await (await fetch(`../assets/levels/${file}.json`)).json();
+  const { cols, rows } = L.grid;
+  const cells = [];
+  for (const [v, n] of L.grid.cells) for (let i = 0; i < n; i++) cells.push(v);
+  const S = 6, cv = document.getElementById('c'), g = cv.getContext('2d');
+  cv.width = cols * S; cv.height = rows * S;
+  g.fillStyle = '#0b1020'; g.fillRect(0, 0, cv.width, cv.height);
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const c = color(cells[x + y * cols]);
+    if (c) { g.fillStyle = c; g.fillRect(x * S, (rows - 1 - y) * S, S, S); }
+  }
+  const box = (o, col, label) => {
+    g.strokeStyle = col; g.lineWidth = 2;
+    const x0 = o.min[0], x1 = o.max[0], y0 = o.min[1], y1 = o.max[1];
+    g.strokeRect(x0 * S, (rows - y1) * S, (x1 - x0 + 1) * S, (y1 - y0 + 1) * S);
+    g.fillStyle = col; g.fillText(label, o.pos[0] * S + 4, (rows - o.pos[1]) * S - 4);
+  };
+  L.entrances.forEach(e => box(e, '#0f0', `IN ${e.lemmings} @rr${e.releaseRate}`));
+  L.exits.forEach(e => box(e, '#ff0', 'EXIT'));
+  L.triggers.forEach(t => box(t, '#0ff', t.kind));
+  L.traps.forEach(t => box(t, '#f44', t.anim || t.cls));
+  const sk = Object.entries(L.skills).filter(([, n]) => n).map(([k, n]) => `${k}:${n}`).join(' ');
+  document.getElementById('info').textContent =
+    `time ${L.timeLimit}s · save ${L.toSave} · ${sk} · fluids ${L.fluids.map(f => f.type).join(',') || '-'}`;
+}
+
+(async () => {
+  const idx = await (await fetch('../assets/levels/index.json')).json();
+  const pick = document.getElementById('pick');
+  idx.filter(r => r.file && r.name !== 'blank').forEach(r => {
+    const o = document.createElement('option');
+    o.value = r.file; o.textContent = `${r.slot}. ${r.title} (${r.name})`;
+    pick.appendChild(o);
+  });
+  pick.onchange = () => show(pick.value);
+  show(pick.value);
+})();
+</script>
+</body>
+</html>

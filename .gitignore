@@ -1,0 +1,10 @@
+# Copyrighted game data extracted from the original CD: never commit
+extracted/
+assets/
+node_modules/
+dist/
+.DS_Store
+re/
+.claude/
+__pycache__/
+*.pyc

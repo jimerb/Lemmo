@@ -1,0 +1,17 @@
+{
+  "name": "lemmo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/prepare-assets.mjs",
+    "dev": "vite --port 4445 --strictPort --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4445 --strictPort --host",
+    "test": "node --experimental-transform-types test/fuzz.ts && node --experimental-transform-types test/sim-test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

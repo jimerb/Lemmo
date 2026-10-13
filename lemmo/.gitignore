@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Original Lemmings Revolution audio is copyrighted: optional, local only (see README).
+public/sounds/
+public/music/

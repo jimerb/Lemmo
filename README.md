@@ -2,7 +2,7 @@
 
 # Lemmo
 
-**A modern, dark-mode web remake of _Lemmings Revolution_ (2000).**
+**A modern, dark-mode web remake of _lemmos Revolution_ (2000).**
 Same 102 levels, same rules, with a new interface and new art, playable in any browser.
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-3178c6?logo=typescript&logoColor=white)
@@ -35,9 +35,6 @@ Same 102 levels, same rules, with a new interface and new art, playable in any b
 
 ## What is this?
 
-_Lemmings Revolution_ (Psygnosis / Take-Two, 2000) set the classic Lemmings puzzles on a
-**rotating cylinder**. Lemmo rebuilds it for the web:
-
 - **The rules come from the original game.** Walk speed, fall height, bomb fuse, builder
   bricks, how each digger carves terrain and more were recovered by reverse-engineering the
   original executable and level files. See [`docs/SPEC.md`](docs/SPEC.md).
@@ -48,15 +45,15 @@ _Lemmings Revolution_ (Psygnosis / Take-Two, 2000) set the classic Lemmings puzz
   soundtrack that gets its own tune for each level. No original recordings are included. If you
   own the CD you can drop in the original audio (see [Original audio](#original-audio-optional)).
 - **The presentation is new.** Dark mode, a fit-to-screen panorama of the whole level, vector
-  lemmings, procedural terrain, a skill dock, a volume mixer and an illustrated guide.
+  lemmos, procedural terrain, a skill dock, a volume mixer and an illustrated guide.
 
 ## Features
 
 | | |
 |---|---|
-| 🌍 **Whole level at a glance** | The cylinder is unrolled and scaled to fit, so there's no scrolling. Lemmings walking off one edge reappear on the other. |
+| 🌍 **Whole level at a glance** | The cylinder is unrolled and scaled to fit, so there's no scrolling. lemmos walking off one edge reappear on the other. |
 | 🛢️ **Cylinder mode** | Press <kbd>V</kbd> for the spinning drum: drag to rotate, scroll to zoom, plus a minimap. |
-| 🧑‍🎨 **New art** | Vector lemmings with an animation for every action, bevelled procedural terrain in five themes, glowing fluids and particles. |
+| 🧑‍🎨 **New art** | Vector lemmos with an animation for every action, bevelled procedural terrain in five themes, glowing fluids and particles. |
 | 🎚️ **Separate mixer** | Independent music and effects volume, each with its own mute. Settings persist. |
 | 📖 **Built-in guide** | Animated how-to-play guide (<kbd>I</kbd> or the ⓘ button) covering skills, terrain, hazards, controls and tips. |
 | 🗺️ **Five islands** | Easy, Medium, Hard, Very Hard and Special, with progress and best scores saved in the browser. |
@@ -74,11 +71,11 @@ _Lemmings Revolution_ (Psygnosis / Take-Two, 2000) set the classic Lemmings puzz
 
 ## How to play
 
-Lemmings drop from a hatch and walk blindly forward. Assign **skills** so that at least the
+lemmos drop from a hatch and walk blindly forward. Assign **skills** so that at least the
 required number reach the **hot-air balloon** before the timer runs out.
 
 1. Pick a skill from the dock (or press <kbd>1</kbd>–<kbd>8</kbd>).
-2. Click a lemming. A green ring shows who you're targeting, and a tooltip says whether the skill fits.
+2. Click a lemmo. A green ring shows who you're targeting, and a tooltip says whether the skill fits.
 3. Watch **Out / Saved / Time** in the top bar.
 
 ### Skills
@@ -88,18 +85,18 @@ required number reach the **hot-air balloon** before the timer runs out.
 | <kbd>1</kbd> | **Climber** | Permanent. Climbs walls and flips over the top. Falls if it hits an overhang. |
 | <kbd>2</kbd> | **Floater** | Permanent. Opens an umbrella after a short drop and survives any fall. |
 | <kbd>3</kbd> | **Bomber** | 5-second fuse, then blasts a round hole. Metal survives. |
-| <kbd>4</kbd> | **Blocker** | Stands still and turns other lemmings around. |
+| <kbd>4</kbd> | **Blocker** | Stands still and turns other lemmos around. |
 | <kbd>5</kbd> | **Builder** | Lays a 12-brick rising staircase. |
 | <kbd>6</kbd> | **Basher** | Tunnels horizontally. Stopped by metal and one-way walls. |
 | <kbd>7</kbd> | **Miner** | Tunnels diagonally downward. |
 | <kbd>8</kbd> | **Digger** | Digs straight down, three cells wide. |
-| <kbd>N</kbd> ×2 | **Nuke** | Turns every lemming into a bomber. |
+| <kbd>N</kbd> ×2 | **Nuke** | Turns every lemmo into a bomber. |
 
 ### Controls
 
 | Action | Input |
 |---|---|
-| Assign skill | Click a lemming |
+| Assign skill | Click a lemmo |
 | Select skill | <kbd>1</kbd>–<kbd>8</kbd> or the dock |
 | Release rate | <kbd>−</kbd> / <kbd>+</kbd> or the dock buttons (hold to repeat) |
 | Pause / fast-forward | <kbd>P</kbd> / <kbd>F</kbd> (cycles ×1, ×2, ×4) |
@@ -133,14 +130,14 @@ Handy URLs while developing:
 
 ## Original audio (optional)
 
-Lemmo ships with its own synthesized effects and music. If you own the _Lemmings Revolution_ CD,
+Lemmo ships with its own synthesized effects and music. If you own the _lemmos Revolution_ CD,
 you can switch to the original sounds and 13 music tracks. Lemmo uses them automatically when they
 are present in `lemmo/public/sounds` and `lemmo/public/music`. They are git-ignored, so they stay on
 your machine. You'll need **Python 3.9+**:
 
 ```bash
 # from the repository root, with the CD mounted (e.g. /media/$USER/<label>)
-python3 tools/lembox.py extract /media/$USER/<label>/LEMMINGS.BOX extracted/box
+python3 tools/lembox.py extract /media/$USER/<label>/lemmoS.BOX extracted/box
 cd lemmo && npm run assets                # → public/sounds, public/music
 ```
 
@@ -150,7 +147,7 @@ The bundled `lemmo/public/levels/*.json` were produced from the original level f
 [`tools/`](tools). To rebuild them (for example after improving the parser):
 
 ```bash
-python3 tools/lembox.py extract /media/$USER/<label>/LEMMINGS.BOX extracted/box
+python3 tools/lembox.py extract /media/$USER/<label>/lemmoS.BOX extracted/box
 python3 tools/lembox.py extract /media/$USER/<label>/PATCH.BOX    extracted/patch
 python3 tools/export_levels.py            # → assets/levels/*.json + index.json
 cd lemmo && npm run assets                # → public/levels (+ original audio)
@@ -158,7 +155,7 @@ cd lemmo && npm run assets                # → public/levels (+ original audio)
 
 ```mermaid
 flowchart LR
-  CD[(LEMMINGS.BOX / PATCH.BOX)] -->|lembox.py| X[extracted/]
+  CD[(lemmoS.BOX / PATCH.BOX)] -->|lembox.py| X[extracted/]
   X -->|lvlparse.py + export_levels.py| J[assets/levels/*.json]
   X -.->|optional WAVs| W[SOUNDS/ MUSIC/]
   J & W -->|npm run assets| P[lemmo/public/]
@@ -201,7 +198,7 @@ lemmo/
 │   ├── terrain.ts       # procedural terrain painter + colour themes
 │   ├── flatview.ts      # panorama renderer (whole level, fit to screen)
 │   ├── render3d.ts      # cylinder renderer (Canvas 2D column strips)
-│   ├── art.ts           # vector lemmings, hatches, balloons, traps, particles
+│   ├── art.ts           # vector lemmos, hatches, balloons, traps, particles
 │   ├── guide.ts         # illustrated "How to play" guide
 │   ├── audio.ts         # sound engine: effects + music on separate channels
 │   ├── synth.ts         # synthesized sound effects and the generative music engine
@@ -220,7 +217,7 @@ lemmo/
 **Simulation** (`src/sim.ts`). The world is a 256 × 96 grid of bit flags (earth, metal,
 one-way walls, no-dig, water, lava, acid, …), exactly as stored in the original `.LVL` files. Row 0
 is the bottom and columns wrap. The simulation runs at a fixed 60 Hz in game-time seconds, and each
-lemming is a small state machine (`walking`, `falling`, `climbing`, `building`, `bashing`, …). Movement
+lemmo is a small state machine (`walking`, `falling`, `climbing`, `building`, `bashing`, …). Movement
 works boundary to boundary: when a walker crosses into a new column it runs the original game's step rule
 (step up or down at most 2 cells, otherwise turn, climb or fall). Skills that dig run on a 1-second,
 100-step cycle with events at the same steps the original used. The simulation has no DOM or rendering
@@ -230,7 +227,7 @@ code, so it runs headless in tests.
 glow) and only changed cells are repainted. The **panorama** view draws that texture split at an
 automatically chosen seam: the most solid column that no hatch, balloon or trap straddles. The
 **cylinder** view draws one shaded strip per column on a virtual drum and redraws only when the camera
-moves. Lemmings, objects and particles go on a separate overlay canvas every frame.
+moves. lemmos, objects and particles go on a separate overlay canvas every frame.
 
 **Audio.** Every effect is synthesized once into a WebAudio buffer: oscillators, noise and
 envelopes for the hatch, blips, bombs and splashes, plus little "voices" for *Let's go!*, *Oh no!* and
@@ -255,7 +252,7 @@ All values come from the original executable (addresses in [`docs/SPEC.md`](docs
 | Basher | 4-cell-high tunnel, one column per second |
 | Digger | 3 cells wide, one row per second |
 | Release interval | 5.0 s at rate 1 down to 0.2 s at rate 99 (original `RELEASERATE.PC` table) |
-| Water / acid | deadly unless the lemming is a swimmer / acid-proof (set by its hatch) |
+| Water / acid | deadly unless the lemmo is a swimmer / acid-proof (set by its hatch) |
 | Lava | always deadly |
 
 ## Testing
@@ -265,7 +262,7 @@ npm test
 ```
 
 - **`test/fuzz.ts`** plays every level for 4 simulated minutes with pseudo-random skill
-  assignments plus a nuke, and fails on exceptions or invalid lemming positions.
+  assignments plus a nuke, and fails on exceptions or invalid lemmo positions.
 - **`test/sim-test.ts`** checks rules against real levels. For example, *Just Climb* saves 10/10 with
   climbers and 0/10 without, and *Just Float* saves 10/10 with floaters.
 
@@ -298,27 +295,7 @@ reverse-engineered yet:
 
 ## Contributing
 
-Issues and pull requests are welcome.
+Issues  are welcome.
 
-1. Fork, then create a branch: `git checkout -b feat/my-change`
-2. Keep game rules in `src/sim.ts` and cite the original behaviour where you can ([`docs/SPEC.md`](docs/SPEC.md)).
-3. Run `npm test` and `npm run build` before opening a PR.
-4. Don't commit original audio, textures or other extracted CD data (they're git-ignored).
 
-## Reverse engineering
 
-The rules and level format were recovered from the shipped game with Ghidra and the REA toolkit.
-[`docs/SPEC.md`](docs/SPEC.md) documents the world model, cell flags, physics constants, every
-lemming action, the skill rules and every file format (LEMBOX archives, `.LVL` levels, compressed
-textures, sprites). [`docs/REVERSE_ENGINEERING.md`](docs/REVERSE_ENGINEERING.md) describes the tools.
-
-## Credits and legal
-
-- **_Lemmings Revolution_** © 2000 Psygnosis / Take-Two Interactive. *Lemmings* is a trademark of
-  its respective owner. This is an unofficial, non-commercial fan project, not affiliated with or
-  endorsed by them. The bundled level layouts are converted from the original game's level files.
-  No original graphics, sound effects or music are included.
-- Lemmo's code, art, sound effects, music engine and interface are original work.
-- Built with [Vite](https://vitejs.dev) and TypeScript. Font: [Outfit](https://fonts.google.com/specimen/Outfit).
-
-**License:** _to be decided by the repository owner_. Add a `LICENSE` file before publishing.

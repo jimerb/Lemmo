@@ -20,7 +20,9 @@ export const THEMES: Theme[] = [
   { name: 'moss', earthTop: [110, 150, 92], earthBottom: [54, 82, 62], lip: '#c4f27a', metal: [88, 104, 116], sky: ['#07130f', '#14302a'] },
 ];
 
-export function themeFor(name: string): Theme {
+export function themeFor(name: string, override?: string): Theme {
+  const named = override && THEMES.find((t) => t.name === override);
+  if (named) return named;
   let h = 0;
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return THEMES[h % THEMES.length];

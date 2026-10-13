@@ -36,6 +36,10 @@ export interface FluidData extends Footprint {
 
 export interface LevelData {
   name: string;
+  /** Display title (user levels; campaign titles live in index.json). */
+  title?: string;
+  /** Terrain theme name (user levels); otherwise picked from a hash of `name`. */
+  theme?: string;
   timeLimit: number;
   toSave: number;
   skills: Record<string, number>;
@@ -57,6 +61,8 @@ export interface LevelIndexEntry {
   save: number;
   total: number;
   file: string | null;
+  /** Subtitle shown instead of "Tier · Level N" (user levels). */
+  tag?: string;
 }
 
 export const TIERS = ['Easy', 'Medium', 'Hard', 'Very Hard', 'Special'];
@@ -85,3 +91,13 @@ export function decodeCells(level: LevelData): Uint32Array {
   return out;
 }
 
+/** Inverse of decodeCells: run-length encode a grid as [value, count] pairs. */
+export function encodeCells(cells: Uint32Array): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < cells.length; i++) {
+    const last = out[out.length - 1];
+    if (last && last[0] === cells[i]) last[1]++;
+    else out.push([cells[i], 1]);
+  }
+  return out;
+}

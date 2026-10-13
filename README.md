@@ -17,6 +17,7 @@
 - [What is this?](#what-is-this)
 - [Features](#features)
 - [How to play](#how-to-play)
+- [Level Editor (beta)](#level-editor-beta)
 - [Getting started](#getting-started)
 - [Original audio (optional)](#original-audio-optional)
 - [Scripts](#scripts)
@@ -52,6 +53,7 @@
 | 🧑‍🎨 **New art** | Vector lemmos with an animation for every action, bevelled procedural terrain in five themes, glowing fluids and particles. |
 | 🎚️ **Separate mixer** | Independent music and effects volume, each with its own mute. Settings persist. |
 | 📖 **Built-in guide** | Animated how-to-play guide (<kbd>I</kbd> or the ⓘ button) covering skills, terrain, hazards, controls and tips. |
+| 🛠️ **Level Editor (beta)** | Paint terrain, place hatches, exits, traps, anti-gravity fields and teleporters, set the win rules, then test-play to verify. Your levels show up under **User levels · Sandbox**. |
 | 🗺️ **Five islands** | Easy, Medium, Hard, Very Hard and Special, with progress and best scores saved in the browser. |
 | ⚡ **Runs anywhere** | Pure Canvas 2D, no WebGL and no runtime dependencies. Fine on software-rendered machines and VMs. |
 | 🎵 **Synth sound and music** | Code-generated effects and an upbeat generative soundtrack, a different tune for every level. Original audio is optional. |
@@ -100,6 +102,32 @@ required number reach the **hot-air balloon** before the timer runs out.
 | Guide | <kbd>I</kbd> |
 | Pause menu | <kbd>Esc</kbd> |
 | Cylinder view only | Drag to spin and pan, wheel to zoom, <kbd>Space</kbd> to zoom in close, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrow keys, click the minimap |
+
+## Level Editor (beta)
+
+Open **Level Editor** from the main menu (or `?editor` in the URL). Start from a blank world, a
+small starter puzzle, or a copy of any campaign level.
+
+- **Terrain:** brush, eraser, box and fill tools with nine materials: earth, steel, hard earth (no
+  digging), one-way walls in each direction, water, lava, acid and force fields. Fill pours into
+  empty space up to the height you click, which makes pools easy.
+- **Objects:** hatches (Lemmo count, release rate, direction, normal/swimmer/acid-proof), exits,
+  saw traps, anti-gravity fields and teleporter pairs. Exits, traps and teleporters snap to the ground.
+  A dotted line under each hatch shows where its Lemmo's land and turns red if the fall is fatal.
+- **Win rules:** how many Lemmo's must be saved, the time limit, how many of each skill, and
+  whether the Nuke button is allowed.
+- **Check:** lists blocking problems (no hatch, no exit, impossible goal) and likely mistakes
+  (fatal drops, buried exits, unpaired teleporters). A *dry run* plays the level with no skills,
+  so you can tell whether it's too easy.
+- **Verify:** *Test play* runs the real game. Beat your level once and it's marked **Verified**.
+  Any later edit clears that.
+- Levels autosave to the browser (`localStorage`), with undo/redo. Export/import a level as a
+  `.lemmo.json` file to back it up or share it.
+
+Play your levels for fun under **Level select → User levels · Sandbox**. They don't count toward
+campaign progress. The editor only offers mechanics the simulation runs today. Skill pads, switches,
+moving traps and rising fluids from the original levels aren't editable yet (see
+[Known gaps](#known-gaps-and-roadmap)); when you remix a campaign level, that data is kept as it is.
 
 ## Getting started
 
@@ -196,6 +224,9 @@ lemmo/
 │   ├── render3d.ts      # cylinder renderer (Canvas 2D column strips)
 │   ├── art.ts           # vector lemmos, hatches, balloons, traps, particles
 │   ├── guide.ts         # illustrated "How to play" guide
+│   ├── editor.ts        # Level Editor (beta): editor screen, level hub, user-level cards
+│   ├── editor.css       # editor styles
+│   ├── userlevels.ts    # user levels: storage, templates, validation, dry run, import/export
 │   ├── audio.ts         # sound engine: effects + music on separate channels
 │   ├── synth.ts         # synthesized sound effects and the generative music engine
 │   ├── icons.ts         # inline SVG icons
@@ -261,6 +292,8 @@ npm test
   assignments plus a nuke, and fails on exceptions or invalid lemmo positions.
 - **`test/sim-test.ts`** checks rules against real levels. For example, *Just Climb* saves 10/10 with
   climbers and 0/10 without, and *Just Float* saves 10/10 with floaters.
+- **`test/editor-test.ts`** covers the editor's data layer: terrain encoding round-trips on every
+  level, validation, import/export, remixing, and the starter template being solvable with one builder.
 
 The type checker runs as part of `npm run build`.
 
@@ -288,6 +321,7 @@ reverse-engineered yet:
 - [ ] Portal pairing confirmed against the original (currently paired in file order)
 - [ ] Touch controls and mobile layout polish
 - [ ] Optional original sprite set as an alternative to the new art
+- [ ] Level Editor: skill pads, switches, moving traps and rising fluids once the simulation supports them; touch editing; sharing levels by link
 
 ## Contributing
 

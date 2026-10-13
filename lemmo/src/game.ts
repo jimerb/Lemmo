@@ -25,6 +25,10 @@ export interface GameHost {
   onFinished(entry: LevelIndexEntry, saved: number, success: boolean): void;
   nextOf(entry: LevelIndexEntry): LevelIndexEntry | null;
   play(entry: LevelIndexEntry): void;
+  /** Label for the "back to the list" buttons (default "Levels"). */
+  exitLabel?: string;
+  /** Extra line under the result, e.g. the editor's verification status. */
+  resultNote?(success: boolean): string;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = '') => {
@@ -67,7 +71,7 @@ export class Game {
 
   constructor(private level: LevelData, private entry: LevelIndexEntry, private host: GameHost) {
     this.sim = new Sim(level);
-    const theme = themeFor(level.name);
+    const theme = themeFor(level.name, level.theme);
     this.painter = new TerrainPainter(this.sim.cells, this.sim.rows, theme);
     this.root.style.background = `radial-gradient(1200px 800px at 50% 40%, ${theme.sky[1]}, ${theme.sky[0]} 70%)`;
     this.theme = theme;
@@ -143,7 +147,7 @@ export class Game {
     const back = el('button', 'btn icon', ICONS.menu);
     back.title = 'Menu (Esc)';
     back.onclick = () => this.showPause();
-    const name = el('div', 'pill level-name', `<small>${TIERS[tierOf(this.entry.slot)]} · ${this.entry.slot + 1}</small>${this.entry.title}`);
+    const name = el('div', 'pill level-name', `<small>${this.entry.tag ?? `${TIERS[tierOf(this.entry.slot)]} · ${this.entry.slot + 1}`}</small>${this.entry.title}`);
     const stats = el('div', 'stats');
     const stat = (k: string, label: string) => {
       const s = el('div', 'pill stat', `<b>–</b><span>${label}</span>`);
@@ -359,7 +363,7 @@ export class Game {
 
   private showBriefing() {
     const { m, close } = this.modal(`
-      <div class="sub">${TIERS[tierOf(this.entry.slot)]} · Level ${this.entry.slot + 1}</div>
+      <div class="sub">${this.entry.tag ?? `${TIERS[tierOf(this.entry.slot)]} · Level ${this.entry.slot + 1}`}</div>
       <h3>${this.entry.title}</h3>
       <div class="facts">
         <div class="fact"><b>${this.sim.total}</b><span>Lemmo's</span></div>
@@ -368,7 +372,7 @@ export class Game {
       </div>
       <div class="skill-chips">${this.skillChips()}</div>
       <div class="hint"><kbd>1</kbd>–<kbd>8</kbd> pick a skill · click a Lemmo to assign · the world wraps around at the edges · <kbd>V</kbd> toggles the spinning cylinder view · new here? press <kbd>I</kbd> or ⓘ for the guide</div>
-      <div class="actions"><button class="btn ghost" data-a="back">Levels</button><button class="btn primary" data-a="go">Let's go!</button></div>`);
+      <div class="actions"><button class="btn ghost" data-a="back">${this.host.exitLabel ?? 'Levels'}</button><button class="btn primary" data-a="go">Let's go!</button></div>`);
     m.querySelector<HTMLElement>('[data-a=back]')!.onclick = () => this.host.onExit();
     this.closeBriefing = close;
     m.querySelector<HTMLElement>('[data-a=go]')!.onclick = () => this.start();
@@ -421,13 +425,14 @@ export class Game {
       <div class="sub">${ok ? (this.sim.saved === this.sim.total ? 'You totally stormed that level!' : 'Well done!') : 'You failed to rescue enough Lemmo’s'}</div>
       <h3>${this.entry.title}</h3>
       <div class="big ${ok ? 'good' : 'bad'}">${pct}%</div>
+      ${this.host.resultNote ? `<div class="hint">${this.host.resultNote(ok)}</div>` : ''}
       <div class="facts">
         <div class="fact"><b>${this.sim.saved}</b><span>Saved</span></div>
         <div class="fact"><b>${this.level.toSave}</b><span>Needed</span></div>
         <div class="fact"><b>${this.sim.total}</b><span>Total</span></div>
       </div>
       <div class="actions">
-        <button class="btn ghost" data-a="levels">Levels</button>
+        <button class="btn ghost" data-a="levels">${this.host.exitLabel ?? 'Levels'}</button>
         <button class="btn ${ok ? '' : 'primary'}" data-a="retry">${ICONS.restart} Retry</button>
         ${ok && next ? '<button class="btn primary" data-a="next">Next level</button>' : ''}
       </div>`);

@@ -2,9 +2,6 @@
 
 # Lemmo
 
-**A modern, dark-mode web remake of _lemmos Revolution_ (2000).**
-Same 102 levels, same rules, with a new interface and new art, playable in any browser.
-
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-3178c6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
 ![No WebGL needed](https://img.shields.io/badge/renderer-Canvas%202D-5df2b0)
@@ -30,8 +27,7 @@ Same 102 levels, same rules, with a new interface and new art, playable in any b
 - [Building and deploying](#building-and-deploying)
 - [Known gaps and roadmap](#known-gaps-and-roadmap)
 - [Contributing](#contributing)
-- [Reverse engineering](#reverse-engineering)
-- [Credits and legal](#credits-and-legal)
+
 
 ## What is this?
 

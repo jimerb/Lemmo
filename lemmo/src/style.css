@@ -157,6 +157,8 @@ button { font: inherit; color: inherit; }
   background: rgba(10, 14, 28, 0.88); border: 1px solid var(--line); white-space: nowrap; transform: translate(14px, 14px);
 }
 .tooltip em { font-style: normal; color: var(--accent); }
+/* touch: centred above the Lemmo instead of beside the pointer, and a bit bigger */
+.tooltip.touch { transform: translate(-50%, -100%); font-size: 15px; padding: 8px 12px; white-space: normal; max-width: min(320px, 80vw); text-align: center; }
 
 .toast {
   position: absolute; top: 76px; left: 50%; transform: translateX(-50%); padding: 10px 18px; border-radius: 12px;

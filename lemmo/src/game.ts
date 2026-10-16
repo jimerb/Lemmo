@@ -510,7 +510,9 @@ export class Game {
       this.mouse.y = e.offsetY;
       if (!this.mouse.down) return;
       const slop = e.pointerType === 'mouse' ? 6 : 12;
-      if (!this.mouse.dragging && Math.hypot(e.offsetX - this.mouse.sx, e.offsetY - this.mouse.sy) > slop) this.mouse.dragging = true;
+      // a finger sliding in panorama view aims (the view doesn't pan); elsewhere moving turns into a drag
+      const aims = e.pointerType !== 'mouse' && this.mode === 'flat';
+      if (!aims && !this.mouse.dragging && Math.hypot(e.offsetX - this.mouse.sx, e.offsetY - this.mouse.sy) > slop) this.mouse.dragging = true;
       if (this.mouse.dragging && this.mode === 'cylinder') {
         const front = this.view.project(this.view.frontColumn(), this.view.camY + this.sim.rows / 2, o.clientWidth, o.clientHeight);
         const ppu = Math.max(0.5, front.scale);
@@ -526,7 +528,12 @@ export class Game {
       if (pts.size < 2) pinch = null;
       if (pts.size > 0) return;
       const touch = e.pointerType !== 'mouse';
-      if (!cancelled && this.mouse.down && !this.mouse.dragging) this.tryAssign(this.pick(e.offsetX, e.offsetY, touch ? 26 : 14), touch);
+      if (!cancelled && this.mouse.down && !this.mouse.dragging) {
+        // a finger assigns to the Lemmo it was highlighting, so what you saw is what you get
+        const l = touch ? (this.hover ?? this.pick(e.offsetX, e.offsetY, 30)) : this.pick(e.offsetX, e.offsetY, 14);
+        this.tryAssign(l, touch);
+        if (touch && l) this.inspect = { l, until: this.clock + 3 };
+      }
       this.mouse.down = false;
       this.mouse.dragging = false;
       if (touch) this.mouse.x = -1; // no hover highlight left behind by a finger
@@ -551,6 +558,8 @@ export class Game {
   }
 
   private lastVis: { l: Lemmo; p: { x: number; y: number; scale: number } }[] = [];
+  /** Touch: the Lemmo last tapped, kept highlighted with its info for a few seconds. */
+  private inspect: { l: Lemmo; until: number } | null = null;
   /** The Lemmo nearest to screen point (x, y), preferring ones the selected skill can be given to. */
   private pick(x: number, y: number, minR: number): Lemmo | null {
     let best = Infinity, hit: Lemmo | null = null;
@@ -779,11 +788,15 @@ export class Game {
     }
     vis.sort((a, b) => a.p.facing - b.p.facing);
 
-    // hover pick (mouse only: touch picks on release)
+    // hover pick: the mouse pointer, or a finger while it's on the screen (touch has no hover otherwise)
     this.lastVis = vis;
-    this.hover = this.mouse.x >= 0 && !this.mouse.dragging && !this.touchMode ? this.pick(this.mouse.x, this.mouse.y, 14) : null;
+    const fingerDown = this.touchMode && this.mouse.down;
+    this.hover = this.mouse.x >= 0 && !this.mouse.dragging && (!this.touchMode || fingerDown)
+      ? this.pick(this.mouse.x, this.mouse.y, this.touchMode ? 30 : 14) : null;
+    if (this.inspect && (this.clock > this.inspect.until || !this.sim.lemmos.includes(this.inspect.l) || ['dead', 'saved'].includes(this.inspect.l.state))) this.inspect = null;
+    const ringed = this.hover ?? (this.touchMode ? this.inspect?.l ?? null : null);
     const lemScale = this.mode === 'flat' ? 1.35 : 1;
-    for (const { l, p } of vis) drawLemmo(c, l, p.x, p.y, p.scale * lemScale, { face: l.dir, hover: l === this.hover, time });
+    for (const { l, p } of vis) drawLemmo(c, l, p.x, p.y, p.scale * lemScale, { face: l.dir, hover: l === ringed, time });
 
     // particles
     for (const pt of this.particles) {
@@ -798,16 +811,27 @@ export class Game {
 
     // tooltip
     const tip = this.ui.tooltip;
-    if (this.hover) {
-      const l = this.hover;
+    if (ringed) {
+      const l = ringed;
       const tags = [l.climber ? 'Climber' : '', l.floater ? 'Floater' : '', l.type === 1 ? 'Swimmer' : l.type === 2 ? 'Acid-proof' : '',
         l.fast > 0 ? 'Faster' : l.slow > 0 ? 'Slower' : ''].filter(Boolean);
       const can = this.sim.canAssign(l, this.selected);
-      tip.innerHTML = `${STATE_LABEL[l.state] ?? l.state}${tags.length ? ` · <em>${tags.join(' · ')}</em>` : ''}${can ? '' : ' · <span style="color:#ff8aa0">can’t ' + SKILL_LABEL[this.selected].toLowerCase() + '</span>'}`;
-      tip.style.left = this.mouse.x + 'px';
-      tip.style.top = this.mouse.y + 'px';
+      const busy = l !== this.hover; // the tapped Lemmo after its skill was handed out: just show what it is now
+      tip.innerHTML = `${STATE_LABEL[l.state] ?? l.state}${tags.length ? ` · <em>${tags.join(' · ')}</em>` : ''}${can || busy ? '' : ' · <span style="color:#ff8aa0">can’t ' + SKILL_LABEL[this.selected].toLowerCase() + '</span>'}`;
+      tip.classList.toggle('touch', this.touchMode);
+      if (this.touchMode) {
+        // above the Lemmo, so the finger doesn't cover it
+        const at = vis.find((v) => v.l === l)?.p;
+        const lift = at ? at.scale * lemScale * (l.g < 0 ? -1 : 6) : 0;
+        const x = at ? at.x : this.mouse.x, y = at ? at.y - lift : this.mouse.y;
+        tip.style.left = clamp(x, 70, this.overlay.clientWidth - 70) + 'px';
+        tip.style.top = Math.max(y - 12, 64) + 'px';
+      } else {
+        tip.style.left = this.mouse.x + 'px';
+        tip.style.top = this.mouse.y + 'px';
+        this.overlay.style.cursor = 'pointer';
+      }
       tip.classList.remove('hidden');
-      this.overlay.style.cursor = 'pointer';
     } else {
       tip.classList.add('hidden');
       if (!this.mouse.dragging) this.overlay.style.cursor = '';
